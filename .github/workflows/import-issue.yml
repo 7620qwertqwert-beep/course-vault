@@ -1,0 +1,182 @@
+name: Issue 自动归档
+
+"on":
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: import-issue-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  import:
+    name: 归档 Issue 附件
+    if: >-
+      github.event.label.name == 'approved' &&
+      github.event.issue.state == 'open' &&
+      !contains(github.event.issue.labels.*.name, '已入库')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
+      GH_REPO: ${{ github.repository }}
+      GH_PROMPT_DISABLED: "1"
+      GIT_TERMINAL_PROMPT: "0"
+      PYTHONIOENCODING: utf-8
+      ISSUE_NUMBER: ${{ github.event.issue.number }}
+
+    steps:
+      # 只从 main 取可信的归档脚本；Issue 正文里的内容不会被执行。
+      - name: 检出 main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: 运行归档脚本
+        id: import
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/import_issue.py --issue-number "$ISSUE_NUMBER" 2>&1 | tee /tmp/import.log
+
+          ok_line="$(grep -m1 '^IMPORT_OK ' /tmp/import.log || true)"
+          if [ -z "$ok_line" ]; then
+            echo "::error::归档脚本没有输出 IMPORT_OK"
+            exit 1
+          fi
+
+          result="${ok_line#IMPORT_OK }"
+          count="${result##* }"
+          target="${result% *}"
+          case "$count" in
+            ''|*[!0-9]*)
+              echo "::error::无法解析 IMPORT_OK 里的文件数：$ok_line"
+              exit 1
+              ;;
+          esac
+          if [ ! -d "$target" ]; then
+            echo "::error::脚本报告的目标目录不存在：$target"
+            exit 1
+          fi
+          case "$target" in
+            courses/*) ;;
+            *)
+              echo "::error::目标目录不在 courses/ 下：$target"
+              exit 1
+              ;;
+          esac
+
+          course="$(sed -n 's/^IMPORT_META course=//p' /tmp/import.log | head -n 1)"
+          year="$(sed -n 's/^IMPORT_META year=//p' /tmp/import.log | head -n 1)"
+          type="$(sed -n 's/^IMPORT_META type=//p' /tmp/import.log | head -n 1)"
+          if [ -z "$course" ] || [ -z "$year" ] || [ -z "$type" ]; then
+            echo "::error::无法从脚本输出中解析课程 / 年份学期 / 资料类型"
+            exit 1
+          fi
+
+          {
+            echo "target=$target"
+            echo "count=$count"
+            echo "course=$course"
+            echo "year=$year"
+            echo "type=$type"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "已归档到：$target（$count 个文件）"
+
+      - name: 提交到分支并创建 PR
+        id: pr
+        shell: bash
+        env:
+          TARGET: ${{ steps.import.outputs.target }}
+          COURSE: ${{ steps.import.outputs.course }}
+          YEAR: ${{ steps.import.outputs.year }}
+          TYPE: ${{ steps.import.outputs.type }}
+        run: |
+          set -euo pipefail
+
+          # 用 -f 覆盖 .gitignore（允许 20MB 以内的 zip；体积已由脚本校验）。
+          git add -f -- "$TARGET"
+          if git diff --cached --quiet; then
+            echo "没有检测到文件变化，不创建 PR。"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            gh issue comment "$ISSUE_NUMBER" --body "没有检测到需要归档的新文件（可能已经入库）。"
+            exit 0
+          fi
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          branch="issue-${ISSUE_NUMBER}"
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+            # 同一 Issue 重跑时避免覆盖已有分支。
+            branch="${branch}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          fi
+          git switch -c "$branch"
+          title="add: ${COURSE} ${YEAR} ${TYPE}（来自 Issue #${ISSUE_NUMBER}）"
+          git commit -m "$title"
+          git push -u origin "$branch"
+
+          {
+            printf 'Closes #%s\n\n' "$ISSUE_NUMBER"
+            printf '## 🤖 自动归档\n\n'
+            printf -- '- 课程：%s\n' "$COURSE"
+            printf -- '- 年份学期：%s\n' "$YEAR"
+            printf -- '- 资料类型：%s\n' "$TYPE"
+            printf -- '- 来源 Issue：#%s\n' "$ISSUE_NUMBER"
+            printf '\n## Import 日志\n\n```text\n'
+            cat /tmp/import.log
+            printf '```\n'
+          } > /tmp/pr_body.md
+
+          pr_url="$(gh pr create --base main --head "$branch" --title "$title" --body-file /tmp/pr_body.md)"
+          pr_number="${pr_url##*/}"
+          case "$pr_number" in
+            ''|*[!0-9]*)
+              echo "::error::无法从 gh pr create 的输出解析 PR 编号：$pr_url"
+              exit 1
+              ;;
+          esac
+          echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          echo "已创建 PR #$pr_number（分支 $branch）"
+
+      - name: 通知 Issue 并添加已入库标签
+        if: steps.pr.outputs.changed == 'true'
+        shell: bash
+        env:
+          PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
+        run: |
+          set -euo pipefail
+          gh label create "已入库" --color 0E8A16 --description "机器人已生成归档 PR" --force >/dev/null 2>&1 || true
+          gh issue comment "$ISSUE_NUMBER" --body "已生成 PR #${PR_NUMBER}，CI 通过后由维护者合并"
+          gh issue edit "$ISSUE_NUMBER" --add-label "已入库"
+
+      - name: 失败时通知 Issue
+        if: failure()
+        shell: bash
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set +e
+          reason="自动归档流程执行失败，请查看 Actions 日志：${RUN_URL}"
+          if [ -f /tmp/import.log ]; then
+            fail_line="$(grep -m1 '^IMPORT_FAIL ' /tmp/import.log || true)"
+            if [ -n "$fail_line" ]; then
+              reason="${fail_line#IMPORT_FAIL }"
+            fi
+          fi
+
+          body="❌ 自动归档失败：${reason}"$'\n\n'"修正后请维护者移除「入库失败」标签，再重新添加「approved」标签触发归档。"
+          gh label create "入库失败" --color B60205 --description "自动归档失败" --force >/dev/null 2>&1 || true
+          gh issue comment "$ISSUE_NUMBER" --body "$body" || true
+          gh issue edit "$ISSUE_NUMBER" --add-label "入库失败" || true
