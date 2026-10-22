@@ -184,7 +184,7 @@ body:
     id: attachments
     attributes:
       label: 附件
-      description: 把文件直接拖到这个框里，最多 5 个、每个不超过 50MB。
+      description: 把文件直接拖到这个框里，最多 5 个、每个不超过 50MB（zip 不超过 20MB，合计不超过 100MB）。
       placeholder: |
         把文件拖进来后，GitHub 会自动生成类似下面的链接，请不要删掉：
         [我的笔记.pdf](https://github.com/user-attachments/assets/...)
