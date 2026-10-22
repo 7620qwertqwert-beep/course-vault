@@ -21,3 +21,9 @@ desktop.ini
 *学号*
 *成绩单*
 *.env
+
+__pycache__/
+*.pyc
+.venv/
+*.bak-*
+README.md.bak-*
