@@ -35,7 +35,14 @@ courses/
     └── <课名>/
 ```
 
-新建课程：复制 `_template/` 整个文件夹 → 改名成课程名 → 填好 README → 上传。
+新建课程，两种办法：
+
+```bash
+# 一键版：跑脚本，按提示填空，目录和卡片自动生成
+python3 scripts/new_course.py
+
+# 手动版：复制 _template/ 整个文件夹 → 改名成课程名 → 填好 README
+```
 
 ---
 
