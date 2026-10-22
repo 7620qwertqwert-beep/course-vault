@@ -48,7 +48,7 @@ courses/
 
 ### 方式二：Git 命令（适合批量）
 ```bash
-git clone https://github.com/<你的账号>/course-vault.git
+git clone https://github.com/7620qwertqwert-beep/course-vault.git
 cd course-vault
 # 把文件丢进对应 courses/ 目录
 git add .
