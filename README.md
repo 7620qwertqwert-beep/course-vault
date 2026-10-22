@@ -4,7 +4,6 @@
 
 这里是面向本校同学的开放课程资料库：**笔记、作业、实验报告、课件、历年试卷、复习攻略**，全部由历届同学自愿上传，永久免费、非营利。
 
-灵感来自浙大「课程攻略共享计划」、电子科大「uestc-course」等国内高校开源资料库（见文末致谢）。
 
 ---
 
@@ -101,18 +100,6 @@ git push
 - 如权利人认为内容侵权，请开 Issue，维护者会在 48 小时内删除。
 - 使用资料产生的任何后果（包括但不限于考试成绩）由使用者自负。
 - 本仓库不保证资料的正确性、完整性、时效性，**仅供参考**。
-
----
-
-## 🙏 致谢
-
-结构与运营思路参考了这些优秀开源项目：
-
-- [QSCTech/zju-icicles](https://github.com/QSCTech/zju-icicles) — 浙江大学课程攻略共享计划
-- [Xovee/uestc-course](https://github.com/Xovee/uestc-course) — 电子科技大学课程资料
-- [tianyilt/ecust-CourseShare](https://github.com/tianyilt/ecust-CourseShare) — 华理课程攻略共享库
-- [BetterECNU/SharedResources](https://github.com/BetterECNU/SharedResources) — 原始资源与整理层分离的做法
-- [mewcoder/SharedCourses](https://github.com/mewcoder/SharedCourses) — 全国高校资料库索引
 
 ---
 
