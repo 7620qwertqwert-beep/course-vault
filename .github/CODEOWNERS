@@ -1,0 +1,14 @@
+# 代码/内容归属：默认由仓库维护者审核
+*                       @7620qwertqwert-beep
+
+# 治理类文件：任何改动都必须维护者过目
+/.github/               @7620qwertqwert-beep
+/LICENSE                @7620qwertqwert-beep
+/TAKEDOWN.md            @7620qwertqwert-beep
+/CONTRIBUTING.md        @7620qwertqwert-beep
+/README.md              @7620qwertqwert-beep
+/scripts/               @7620qwertqwert-beep
+
+# 课程内容：按大类归属，后续可拆到学院/专业
+/courses/公共课/        @7620qwertqwert-beep
+/courses/专业课/        @7620qwertqwert-beep
