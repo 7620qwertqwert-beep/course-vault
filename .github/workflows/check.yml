@@ -27,6 +27,10 @@ jobs:
           chmod +x scripts/check.sh
           bash scripts/check.sh
 
+      # ---------- 索引一致性 ----------
+      - name: 索引一致性
+        run: python3 scripts/build_index.py --check
+
       # ---------- 2. 文件体积 ----------
       - name: 单文件体积检查（上限 50MB）
         run: |
