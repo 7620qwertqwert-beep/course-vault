@@ -27,3 +27,18 @@ __pycache__/
 .venv/
 *.bak-*
 README.md.bak-*
+
+# 密钥与配置文件（绝对不入库，CI 也会再拦一次）
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.jks
+id_rsa*
+id_ed25519*
+*credentials*
+*.token
+mcp_config.json
+*.bak
+*.bak-*
