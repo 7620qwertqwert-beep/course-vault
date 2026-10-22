@@ -64,7 +64,7 @@ def parse_args(argv=None):
             "说明：\n"
             "  运行后按提示依次填写课程信息，非必填项可直接回车跳过。\n"
             "  公共课目录为 courses/公共课/<课程>/；\n"
-            "  专业课目录为 courses/专业课/<专业>/<课程>/。\n"
+            "  专业课目录为 courses/专业课/<学院>/<专业>/<课程>/。\n"
             "  课程卡片已存在时，必须加 --force 才会覆盖；\n"
             "  若原卡片已由人工填写，还需输入大写 YES 二次确认，\n"
             "  覆盖前会自动备份为 README.md.bak-<时间戳>。\n"
@@ -323,21 +323,26 @@ def main(argv=None):
     args = parse_args(argv)
 
     print("== 新建课程 ==")
-    print("提示：除课程名、类别和专业课的专业外，其余各项都可以直接回车跳过。\n")
+    print("提示：公共课只需课程名；专业课还需开课学院和所属专业。其余各项都可以直接回车跳过。\n")
 
-    # 先问课程名和类别，再问学院与专业，才能确定目标目录。
-    course_name = _ask_name("课程名：", "课程名")
+    # 先问类别；专业课按“开课学院 → 所属专业 → 课程名”的顺序提问。
     category = _ask_category()
-    college = _ask("开课学院（可留空）：")
-
     if category == "专业课":
+        college = _ask_name(
+            "开课学院（专业课必填）：",
+            "开课学院",
+            required=True,
+        )
         profession = _ask_name(
             "所属专业（专业课必填）：",
             "所属专业",
             required=True,
         )
-        course_dir = COURSES_DIR / category / profession / course_name
+        course_name = _ask_name("课程名：", "课程名")
+        course_dir = COURSES_DIR / category / college / profession / course_name
     else:
+        course_name = _ask_name("课程名：", "课程名")
+        college = _ask("开课学院（可留空）：")
         profession = PUBLIC_MAJOR
         course_dir = COURSES_DIR / category / course_name
 

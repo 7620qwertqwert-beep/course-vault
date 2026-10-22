@@ -1,10 +1,14 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # 上传前自检脚本：查目录结构 / 命名规范 / 体积 / 敏感词
 # 用法： bash scripts/check.sh
 #
 # 说明：本脚本只扫描文本文件与目录结构；PDF/DOCX/PPTX 等二进制资料
 # 无法通过本脚本判断内容，提交前请人工复核。
 # 兼容 POSIX sh（可直接用 dash 运行），不使用进程替换等 bash 专有语法。
+#
+# 课程层级：
+#   courses/公共课/<课程>/
+#   courses/专业课/<学院>/<专业>/<课程>/
 
 cd "$(dirname "$0")/.." || exit 1
 
@@ -32,6 +36,9 @@ check_course_dir() {
 }
 
 echo "== 1. 检查课程目录结构（README.md + 笔记/课件/试卷/作业） =="
+
+# 公共课：courses/公共课/<课程>/
+: > "$tmpdir/public"
 if [ -d courses/公共课 ]; then
   find courses/公共课 -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort > "$tmpdir/public"
   while IFS= read -r course_dir; do
@@ -39,13 +46,30 @@ if [ -d courses/公共课 ]; then
     check_course_dir "$course_dir"
   done < "$tmpdir/public"
 fi
+
+# 专业课：courses/专业课/<学院>/<专业>/<课程>/
+: > "$tmpdir/professional"
 if [ -d courses/专业课 ]; then
-  find courses/专业课 -mindepth 2 -maxdepth 2 -type d 2>/dev/null | sort > "$tmpdir/major"
+  find courses/专业课 -mindepth 3 -maxdepth 3 -type d 2>/dev/null | sort > "$tmpdir/professional"
   while IFS= read -r course_dir; do
     [ -n "$course_dir" ] || continue
     check_course_dir "$course_dir"
-  done < "$tmpdir/major"
+  done < "$tmpdir/professional"
+
+  # 旧的三层结构（专业课/<专业>/<课程>）会落在 depth 2；含 README.md 即视为残留。
+  find courses/专业课 -mindepth 2 -maxdepth 2 -type d 2>/dev/null | sort > "$tmpdir/legacy"
+  while IFS= read -r legacy_dir; do
+    [ -n "$legacy_dir" ] || continue
+    if [ -f "$legacy_dir/README.md" ]; then
+      echo "  ⚠ 专业课层级错误（应为 学院/专业/课程）: $legacy_dir"
+      bad=$((bad + 1))
+    fi
+  done < "$tmpdir/legacy"
 fi
+
+public_count=$(wc -l < "$tmpdir/public" | tr -d ' ')
+professional_count=$(wc -l < "$tmpdir/professional" | tr -d ' ')
+echo "  课程数：公共课 ${public_count} 门，专业课 ${professional_count} 门。"
 
 echo "== 2. 检查文件名规范（应为 YYYY春/秋-类型-描述） =="
 find courses -type f 2>/dev/null | sort > "$tmpdir/files"
