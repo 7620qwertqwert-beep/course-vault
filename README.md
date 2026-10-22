@@ -86,7 +86,7 @@ python3 scripts/new_course.py
 2. 点 `Add file` → `Upload files`
 3. 选文件，底部填一句说明，点绿色 `Commit changes`
 
-## 方式二：Fork + Pull Request（普通同学的正路）
+## 方式二：Fork + Pull Request（进阶选项，不学也没关系）
 
 ```
 ① 仓库右上角点 Fork              → 你账号下多出一份自己的副本
