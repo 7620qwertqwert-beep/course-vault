@@ -10,6 +10,7 @@
 - [INDEX.md](INDEX.md) —— 有哪些课、难度几星、资料全没全
 - [CONTRIBUTING.md](CONTRIBUTING.md) —— 上传规则、命名规范、什么不能传
 - [docs/新手上传教程.md](docs/新手上传教程.md) —— 手把手教你第一次上传
+- [docs/治理与审核方案.md](docs/治理与审核方案.md) —— 有人乱传、被破坏、被投诉时怎么处理
 
 授权与免责见 [LICENSE](LICENSE)，侵权投诉见 [TAKEDOWN.md](TAKEDOWN.md)。
 
