@@ -65,14 +65,18 @@ jobs:
         shell: bash
         run: |
           set -eu
-          bash "$TRUSTED_DIR/check.sh" --root "$GITHUB_WORKSPACE"
+          cp "$TRUSTED_DIR/check.sh" scripts/.ci_trusted_check.sh
+          trap 'rm -f scripts/.ci_trusted_check.sh' EXIT
+          bash scripts/.ci_trusted_check.sh
 
       # ---------- 索引一致性 ----------
       - name: 索引一致性（PR 时使用 base 的 build_index.py）
         shell: bash
         run: |
           set -eu
-          python3 "$TRUSTED_DIR/build_index.py" --root "$GITHUB_WORKSPACE" --check
+          cp "$TRUSTED_DIR/build_index.py" scripts/.ci_trusted_build_index.py
+          trap 'rm -f scripts/.ci_trusted_build_index.py' EXIT
+          python3 scripts/.ci_trusted_build_index.py --check
 
       # ---------- 2. 文件体积 ----------
       - name: 单文件体积检查（上限 50MB）
