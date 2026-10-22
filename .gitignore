@@ -1,0 +1,23 @@
+# 系统垃圾
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 办公软件临时文件
+~$*
+*.tmp
+*.bak
+
+# 超过 50MB 的大文件（走 Issue 给网盘链接）
+*.zip
+*.7z
+*.rar
+*.mp4
+*.mov
+*.iso
+
+# 个人隐私相关（永不入库）
+*个人*
+*学号*
+*成绩单*
+*.env
