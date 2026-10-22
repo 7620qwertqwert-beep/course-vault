@@ -19,7 +19,7 @@ COURSES_DIR = REPO_ROOT / "courses"
 
 # 课程类别与每门课固定创建的四个资料子目录。
 CATEGORIES = ("公共课", "专业课")
-SUBDIRS = ("notes", "slides", "exams", "homework")
+SUBDIRS = ("笔记", "课件", "试卷", "作业")
 
 # 课程卡片中需要向用户询问的字段顺序。
 FIELD_PROMPTS = (
@@ -53,7 +53,7 @@ def parse_args(argv=None):
     parser.add_argument(
         "--force",
         action="store_true",
-        help="课程目录已存在时覆盖 README.md（不会删除 notes/slides/exams/homework 中的资料）",
+        help="课程目录已存在时覆盖 README.md（不会删除 笔记/课件/试卷/作业 中的资料）",
     )
     return parser.parse_args(argv)
 
