@@ -1,0 +1,117 @@
+name: PR 自动检查
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# 只读权限，工作流自身不改仓库
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    name: 结构与内容检查
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码（含历史，用于比对改动）
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ---------- 1. 仓库自检（命名规范 / 目录结构 / 文本敏感词） ----------
+      - name: 运行 scripts/check.sh
+        run: |
+          chmod +x scripts/check.sh
+          bash scripts/check.sh
+
+      # ---------- 2. 文件体积 ----------
+      - name: 单文件体积检查（上限 50MB）
+        run: |
+          set -eu
+          fail=0
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            size=$(stat -c %s "$f")
+            if [ "$size" -gt 52428800 ]; then
+              echo "::error file=$f::文件超过 50MB（$(( size / 1048576 ))MB），请改用网盘链接"
+              fail=1
+            fi
+          done <<EOF
+          $(find . -path ./.git -prune -o -type f -print)
+          EOF
+          [ "$fail" -eq 0 ] || exit 1
+
+      # ---------- 3. 空文件刷屏 ----------
+      - name: 空文件数量检查
+        run: |
+          set -eu
+          empty=$(find courses -type f -empty ! -name '.gitkeep' 2>/dev/null | wc -l)
+          echo "空文件数：$empty"
+          if [ "$empty" -gt 5 ]; then
+            echo "::error::发现 $empty 个空文件，疑似灌水或上传失败"
+            exit 1
+          fi
+
+      # ---------- 4. PR 改动范围 ----------
+      - name: 改动范围检查（仅 PR 触发）
+        if: github.event_name == 'pull_request'
+        run: |
+          set -eu
+          git fetch --depth=1 origin "${{ github.base_ref }}"
+          BASE="origin/${{ github.base_ref }}"
+          CHANGED=$(git diff --name-only "$BASE"...HEAD)
+          DELETED=$(git diff --name-status "$BASE"...HEAD | awk '$1=="D"{print}' | wc -l)
+          ADDED=$(git diff --name-status "$BASE"...HEAD | awk '$1=="A"{print}' | wc -l)
+
+          echo "新增 $ADDED 个，删除 $DELETED 个"
+          echo "---- 改动文件 ----"
+          echo "$CHANGED"
+
+          fail=0
+
+          # 4.1 批量删除保护：一次删超过 20 个文件必须人工确认
+          if [ "$DELETED" -gt 20 ]; then
+            echo "::error::本次删除了 $DELETED 个文件（上限 20），疑似批量破坏。请拆成多个 PR 或由维护者说明原因。"
+            fail=1
+          fi
+
+          # 4.2 路径白名单：只允许改这几个位置
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            case "$f" in
+              courses/*|docs/*|README.md|INDEX.md|CONTRIBUTING.md|TAKEDOWN.md) ;;
+              .github/*) ;;
+              *)
+                echo "::warning file=$f::改动位置在常规上传路径之外，维护者请确认"
+                ;;
+            esac
+          done <<EOF
+          $CHANGED
+          EOF
+
+          # 4.3 治理文件与工作流：普通贡献者不应修改
+          for f in LICENSE scripts/check.sh scripts/new_course.py .github/workflows/check.yml CONTRIBUTING.md TAKEDOWN.md; do
+            if echo "$CHANGED" | grep -qx "$f"; then
+              echo "::warning file=$f::治理/脚本文件被修改，必须由维护者亲自审核"
+            fi
+          done
+
+          exit "$fail"
+
+      # ---------- 5. 重复文件（同内容多处） ----------
+      - name: 重复文件检测
+        run: |
+          set -eu
+          dup=$(find courses -type f ! -name '.gitkeep' -exec md5sum {} + 2>/dev/null | sort | awk '{print $1}' | uniq -d | wc -l)
+          echo "重复内容组数：$dup"
+          if [ "$dup" -gt 0 ]; then
+            echo "::warning::发现 $dup 组内容完全相同的文件，可能重复上传，请人工确认"
+          fi
+
+      # ---------- 6. 汇总 ----------
+      - name: 检查完成
+        if: success()
+        run: echo "✅ 所有自动检查通过"
