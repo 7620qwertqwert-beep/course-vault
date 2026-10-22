@@ -1,0 +1,461 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""scripts/import_issue.py 的标准库单元测试。
+
+运行：
+    python3 -m unittest discover -s tests -v
+
+测试全部在临时目录里构造课程树，不会写入真实仓库。
+"""
+
+import io
+import os
+import re
+import sys
+import tempfile
+import threading
+import unittest
+from contextlib import redirect_stderr, redirect_stdout
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from unittest import mock
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SCRIPTS_DIR = REPO_ROOT / "scripts"
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+
+import import_issue as imp  # noqa: E402  (先调整 sys.path 再导入)
+
+
+FAKE_ATTACHMENT_URL = (
+    "https://github.com/user-attachments/assets/"
+    "11111111-2222-3333-4444-555555555555"
+)
+
+CONFIRM_CHECKED = "- [X] 文件里不含本人或他人的姓名、学号、手机号、身份证号"
+CONFIRM_UNCHECKED = "- [ ] 文件里不含本人或他人的姓名、学号、手机号、身份证号"
+
+
+def make_body(
+    category="专业课",
+    college="医学院",
+    major="医学院·康复治疗学",
+    course="康复医学概论",
+    year="2025秋",
+    material_type="笔记",
+    attachments=None,
+    confirm=CONFIRM_CHECKED,
+):
+    """按 GitHub Issue Forms 的真实渲染格式生成正文。"""
+    if attachments is None:
+        attachments = "[我的笔记.pdf]({})".format(FAKE_ATTACHMENT_URL)
+    return (
+        "### 课程类别\n\n{category}\n\n"
+        "### 开课学院\n\n{college}\n\n"
+        "### 所属专业\n\n{major}\n\n"
+        "### 课程名称\n\n{course}\n\n"
+        "### 年份学期\n\n{year}\n\n"
+        "### 资料类型\n\n{material_type}\n\n"
+        "### 附件\n\n{attachments}\n\n"
+        "### 确认\n\n{confirm}\n"
+    ).format(
+        category=category,
+        college=college,
+        major=major,
+        course=course,
+        year=year,
+        material_type=material_type,
+        attachments=attachments,
+        confirm=confirm,
+    )
+
+
+class ImportIssueTest(unittest.TestCase):
+    def setUp(self):
+        self._old_repo_root = imp.REPO_ROOT
+        self._old_courses_dir = imp.COURSES_DIR
+
+        self._tmp = tempfile.TemporaryDirectory(prefix="course-vault-unit-")
+        self.root = Path(self._tmp.name)
+        self.courses = self.root / "courses"
+        self.course = (
+            self.courses / "专业课" / "医学院" / "康复治疗学" / "康复医学概论"
+        )
+        for subdir in ("笔记", "课件", "试卷", "作业"):
+            (self.course / subdir).mkdir(parents=True, exist_ok=True)
+        (self.course / "README.md").write_text("# 康复医学概论\n", encoding="utf-8")
+
+        # 让脚本把临时目录当成仓库根。
+        imp.REPO_ROOT = self.root
+        imp.COURSES_DIR = self.courses
+
+        self.body_path = self.root / "issue.md"
+        self.write_body(make_body())
+
+    def tearDown(self):
+        imp.REPO_ROOT = self._old_repo_root
+        imp.COURSES_DIR = self._old_courses_dir
+        self._tmp.cleanup()
+
+    def write_body(self, body):
+        self.body_path.write_text(body, encoding="utf-8")
+
+    def run_main(self, *extra):
+        env = {
+            "IMPORT_ISSUE_BODY_FILE": str(self.body_path),
+            "IMPORT_ISSUE_TITLE": "[上传] 测试",
+        }
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with mock.patch.dict(os.environ, env, clear=False):
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                code = imp.main(["--issue-number", "1", *extra])
+        return code, stdout.getvalue(), stderr.getvalue()
+
+    def make_source(self, name, content):
+        source = self.root / "sources" / name
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_bytes(content)
+        return source
+
+    # ---------- 解析 ----------
+
+    def test_parse_chinese_and_major_with_separator(self):
+        form = imp._parse_form("[上传] 测试", make_body())
+        self.assertEqual(form["category"], "专业课")
+        self.assertEqual(form["college"], "医学院")
+        self.assertEqual(form["major"], "康复治疗学")
+        self.assertEqual(form["course"], "康复医学概论")
+        self.assertEqual(form["year"], "2025秋")
+        self.assertEqual(form["type"], "笔记")
+        self.assertEqual(len(form["attachments"]), 1)
+        self.assertEqual(form["attachments"][0]["url"], FAKE_ATTACHMENT_URL)
+
+    def test_parse_public_course_ignores_empty_college_and_major(self):
+        body = make_body(
+            category="公共课",
+            college="_No response_",
+            major="_No response_",
+            course="高等数学",
+        )
+        form = imp._parse_form("", body)
+        self.assertEqual(form["category"], "公共课")
+        self.assertEqual(form["college"], "")
+        self.assertEqual(form["major"], "")
+        self.assertEqual(form["course"], "高等数学")
+
+    def test_checkbox_unchecked_is_rejected(self):
+        self.write_body(make_body(confirm=CONFIRM_UNCHECKED))
+        code, out, _ = self.run_main("--dry-run")
+        self.assertEqual(code, 2)
+        self.assertIn("请先勾选确认项", out)
+
+    def test_checkbox_lowercase_x_is_accepted(self):
+        body = make_body(confirm=CONFIRM_CHECKED.replace("[X]", "[x]"))
+        form = imp._parse_form("", body)
+        self.assertEqual(form["course"], "康复医学概论")
+
+    def test_checkbox_with_wrong_text_is_rejected(self):
+        body = make_body(confirm="- [X] 随便勾一个无关的确认项")
+        with self.assertRaises(imp.ImportFailure):
+            imp._parse_form("", body)
+
+    def test_unknown_heading_inside_attachment_is_not_a_section(self):
+        body = make_body(
+            attachments=(
+                "说明文字\n\n### 随便写的标题\n\n"
+                "[我的笔记.pdf]({})".format(FAKE_ATTACHMENT_URL)
+            )
+        )
+        form = imp._parse_form("", body)
+        self.assertEqual(len(form["attachments"]), 1)
+
+    def test_form_labels_match_parser(self):
+        form_text = (
+            REPO_ROOT / ".github" / "ISSUE_TEMPLATE" / "上传资料.yml"
+        ).read_text(encoding="utf-8")
+        expected_labels = (
+            "课程类别",
+            "开课学院",
+            "所属专业",
+            "课程名称",
+            "年份学期",
+            "资料类型",
+            "附件",
+            "确认",
+        )
+        for label in expected_labels:
+            self.assertRegex(
+                form_text,
+                r"(?m)^\s*label:\s*{}\s*$".format(re.escape(label)),
+                "Issue 表单缺少字段标签：{}".format(label),
+            )
+            self.assertIn(label, imp._parse_sections(make_body()))
+        self.assertIn(imp.CONFIRM_REQUIREMENT, form_text)
+
+    # ---------- 失败路径 ----------
+
+    def test_course_not_found_exits_2(self):
+        self.write_body(make_body(course="不存在的课程"))
+        code, out, _ = self.run_main("--dry-run")
+        self.assertEqual(code, 2)
+        self.assertIn("课程目录不存在", out)
+
+    def test_illegal_course_components_are_rejected(self):
+        for name in ("a/b", "..", "a\x00b", "a\\b", " a", "a ", ".", "a:b"):
+            with self.subTest(name=repr(name)):
+                with self.assertRaises(imp.ImportFailure):
+                    imp._validate_component(name, "课程名称")
+
+    def test_course_name_with_slash_fails_whole_parse(self):
+        body = make_body(course="康复/医学概论")
+        with self.assertRaises(imp.ImportFailure):
+            imp._parse_form("", body)
+
+    def test_course_name_with_leading_space_fails(self):
+        self.write_body(make_body(course=" 康复医学概论"))
+        code, out, _ = self.run_main("--dry-run")
+        self.assertEqual(code, 2)
+        self.assertIn("空格", out)
+
+    def test_illegal_major_component_is_rejected(self):
+        body = make_body(major="医学院·../逃逸")
+        with self.assertRaises(imp.ImportFailure):
+            imp._parse_form("", body)
+
+    # ---------- 类型映射 ----------
+
+    def test_type_mapping(self):
+        expected = {
+            "笔记": "笔记",
+            "课件": "课件",
+            "试卷": "试卷",
+            "作业": "作业",
+            "实验报告": "作业",
+            "复习资料": "试卷",
+            "其他": "笔记",
+        }
+        for form_type, directory in expected.items():
+            with self.subTest(form_type=form_type):
+                self.assertEqual(imp.TYPE_TO_DIR[form_type], directory)
+                self.assertEqual(
+                    imp._parse_form("", make_body(material_type=form_type))["type"],
+                    form_type,
+                )
+        self.assertEqual(imp.TYPE_TO_FILENAME["实验报告"], "实验报告")
+        self.assertEqual(imp.TYPE_TO_FILENAME["复习资料"], "复习")
+        self.assertEqual(imp.TYPE_TO_FILENAME["试卷"], "期末")
+
+    # ---------- 重名 ----------
+
+    def test_duplicate_filename_starts_at_2_then_3(self):
+        target = self.course / "笔记"
+        base = "2025秋-笔记-康复医学概论"
+        (target / "{}.pdf".format(base)).write_bytes(b"old")
+        reserved = set()
+
+        first = imp._allocate_filename(target, base, "pdf", reserved)
+        self.assertEqual(first, "{}-2.pdf".format(base))
+        (target / first).write_bytes(b"second")
+
+        second = imp._allocate_filename(target, base, "pdf", reserved)
+        self.assertEqual(second, "{}-3.pdf".format(base))
+
+    # ---------- 成功路径（本地附件冒充） ----------
+
+    def test_success_path_with_local_attachment_and_no_overwrite(self):
+        target = self.course / "笔记"
+        first_source = self.make_source("我的笔记.pdf", b"%PDF-1.4\nfirst\n")
+        second_source = self.make_source("另一个名字.pdf", b"%PDF-1.4\nsecond\n")
+
+        code, out, err = self.run_main("--attachment-file", str(first_source))
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("IMPORT_OK", out)
+        self.assertIn("仅测试用", err)
+        first = target / "2025秋-笔记-康复医学概论.pdf"
+        self.assertTrue(first.is_file())
+        self.assertEqual(first.read_bytes(), b"%PDF-1.4\nfirst\n")
+        self.assertTrue(first_source.is_file(), "测试模式不能删除调用者的源文件")
+
+        code, out, err = self.run_main("--attachment-file", str(second_source))
+        self.assertEqual(code, 0, out + err)
+        second = target / "2025秋-笔记-康复医学概论-2.pdf"
+        self.assertTrue(second.is_file())
+        self.assertEqual(second.read_bytes(), b"%PDF-1.4\nsecond\n")
+        self.assertEqual(first.read_bytes(), b"%PDF-1.4\nfirst\n", "旧文件被覆盖了")
+
+    def test_without_flag_still_uses_network_download_path(self):
+        # 不传 --attachment-file 时必须走 _download_one，而不是本地冒充。
+        with mock.patch.object(
+            imp,
+            "_download_one",
+            side_effect=imp.ImportFailure("stub: 生产下载路径"),
+        ) as download:
+            code, out, _ = self.run_main()
+        self.assertEqual(code, 2)
+        self.assertIn("stub: 生产下载路径", out)
+        download.assert_called_once()
+
+    def test_attachment_file_count_must_match(self):
+        source = self.make_source("我的笔记.pdf", b"%PDF-1.4\ntest\n")
+        code, out, _ = self.run_main(
+            "--attachment-file",
+            str(source),
+            "--attachment-file",
+            str(source),
+        )
+        self.assertEqual(code, 2)
+        self.assertIn("一一对应", out)
+
+    def test_attachment_file_extension_whitelist_applies(self):
+        source = self.make_source("恶意.exe", b"MZ")
+        code, out, _ = self.run_main("--attachment-file", str(source))
+        self.assertEqual(code, 2)
+        self.assertIn("不支持的文件类型", out)
+
+    def test_total_attachment_size_is_limited(self):
+        first = self.make_source("a.pdf", b"1234")
+        second = self.make_source("b.pdf", b"5678")
+        self.write_body(
+            make_body(
+                attachments=(
+                    "[a.pdf](https://github.com/user-attachments/assets/aaaa)\n\n"
+                    "[b.pdf](https://github.com/user-attachments/assets/bbbb)"
+                )
+            )
+        )
+        with mock.patch.object(imp, "MAX_TOTAL_BYTES", 5):
+            code, out, _ = self.run_main(
+                "--attachment-file",
+                str(first),
+                "--attachment-file",
+                str(second),
+            )
+        self.assertEqual(code, 2)
+        self.assertIn("超过单个 PR", out)
+        self.assertEqual(list((self.course / "笔记").iterdir()), [])
+
+    # ---------- 下载安全 ----------
+
+    def test_html_error_page_is_rejected(self):
+        self.assertTrue(
+            imp._looks_like_error_document(
+                b"<!DOCTYPE html><html><body>not a pdf</body></html>",
+                "application/octet-stream",
+            )
+        )
+        self.assertTrue(imp._looks_like_error_document(b"", "text/html"))
+        self.assertFalse(
+            imp._looks_like_error_document(b"%PDF-1.4\nreal pdf\n", "application/pdf")
+        )
+
+    def test_download_404_and_html_are_friendly_failures(self):
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                if self.path.startswith("/404"):
+                    self.send_error(404)
+                    return
+                body = b"<!DOCTYPE html><html><body>error</body></html>"
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args):
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            port = server.server_address[1]
+            temp_dir = Path(tempfile.mkdtemp(prefix="course-vault-download-"))
+            try:
+                with mock.patch.object(
+                    imp, "_is_official_attachment", return_value=True
+                ):
+                    with self.assertRaises(imp.ImportFailure) as ctx:
+                        imp._download_one(
+                            {
+                                "url": "http://127.0.0.1:{}/x.pdf".format(port),
+                                "label": "x.pdf",
+                            },
+                            1,
+                            temp_dir,
+                        )
+                    self.assertIn("HTML", str(ctx.exception))
+
+                    with self.assertRaises(imp.ImportFailure) as ctx:
+                        imp._download_one(
+                            {
+                                "url": "http://127.0.0.1:{}/404/x.pdf".format(port),
+                                "label": "x.pdf",
+                            },
+                            2,
+                            temp_dir,
+                        )
+                    self.assertIn("HTTP 404", str(ctx.exception))
+                self.assertEqual(list(temp_dir.iterdir()), [])
+            finally:
+                import shutil
+
+                shutil.rmtree(str(temp_dir), ignore_errors=True)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+    def test_attachment_urls_must_be_official_https(self):
+        self.assertTrue(
+            imp._is_official_attachment(
+                "https://github.com/user-attachments/assets/abc"
+            )
+        )
+        self.assertTrue(
+            imp._is_official_attachment(
+                "https://objects.githubusercontent.com/github-production-user-asset"
+            )
+        )
+        self.assertFalse(imp._is_official_attachment("https://evil.example/x.pdf"))
+        self.assertFalse(
+            imp._is_official_attachment(
+                "http://github.com/user-attachments/assets/abc"
+            )
+        )
+        self.assertFalse(imp._is_official_attachment("https://github.com/login"))
+        self.assertFalse(
+            imp._is_official_attachment(
+                "https://user:pass@github.com/user-attachments/assets/abc"
+            )
+        )
+
+    def test_log_text_strips_control_characters(self):
+        self.assertEqual(
+            imp._safe_log_text("正常\n标题\r\x1b[31m"),
+            "正常 标题  [31m",
+        )
+
+    def test_redirect_to_external_host_is_rejected(self):
+        req = imp.request.Request(
+            "https://github.com/user-attachments/assets/abc"
+        )
+        with self.assertRaises(imp.ImportFailure):
+            imp._OfficialRedirectHandler().redirect_request(
+                req, None, 302, "Found", {}, "https://evil.example/x.pdf"
+            )
+
+    # ---------- CLI ----------
+
+    def test_help_marks_attachment_file_as_test_only(self):
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            with self.assertRaises(SystemExit) as ctx:
+                imp.main(["--help"])
+        self.assertEqual(ctx.exception.code, 0)
+        self.assertIn("仅测试用", stdout.getvalue())
+
+
+if __name__ == "__main__":
+    unittest.main()

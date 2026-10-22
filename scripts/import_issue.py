@@ -10,7 +10,7 @@
 安全约定（任意一条不满足都会整体失败，退出码 2，不写入任何课程文件）：
   * 课程目录必须已经存在，课程名必须与目录名完全一致；
   * 所有目标路径都必须落在 courses/ 内，拒绝 ..、斜杠等路径逃逸；
-  * 附件数量 1~5 个，单个不超过 50MB（zip 不超过 20MB）；
+  * 附件数量 1~5 个，单个不超过 50MB（zip 不超过 20MB），合计不超过 100MB；
   * 扩展名只允许 pdf/doc/docx/ppt/pptx/xls/xlsx/md/txt/jpg/jpeg/png/zip。
 
 本地调试：
@@ -18,6 +18,11 @@
     IMPORT_ISSUE_TITLE='[上传] 测试' \
     python3 scripts/import_issue.py --issue-number 1 --dry-run
 设置 IMPORT_ISSUE_BODY_FILE 后不再访问 GitHub API。
+
+仅测试用（生产不要传）：
+    --attachment-file <本地路径>   可重复；按顺序冒充 Issue 里的附件内容，
+                                   跳过网络下载，但保留扩展名/大小/空文件校验。
+    该参数不传时，下载与归档行为与之前完全一致。
 """
 
 import argparse
@@ -37,6 +42,9 @@ COURSES_DIR = REPO_ROOT / "courses"
 MAX_ATTACHMENTS = 5
 MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024
 MAX_ZIP_BYTES = 20 * 1024 * 1024
+# scripts/check.yml 对单个 PR 的“新增/修改文件总大小”上限是 100 MiB；
+# 脚本先拦一次，避免下载完才发现 PR 必然过不了 CI。
+MAX_TOTAL_BYTES = 100 * 1024 * 1024
 DOWNLOAD_TIMEOUT = 60
 API_TIMEOUT = 60
 
@@ -80,6 +88,12 @@ FIELD_ALIASES = {
     "confirm": ("确认", "确认事项", "自查确认"),
 }
 
+# Issue Forms 只会生成上面这些字段标题。只把已知标题当作分节边界，
+# 避免附件说明里恰好写了 `### 附件` 之类的文本把正文截断。
+KNOWN_SECTION_LABELS = {
+    alias for aliases in FIELD_ALIASES.values() for alias in aliases
+}
+
 OFFICIAL_ATTACHMENT_HOSTS = {
     "github.com",
     "www.github.com",
@@ -89,6 +103,9 @@ OFFICIAL_ATTACHMENT_HOSTS = {
 }
 
 USER_AGENT = "course-vault-import-bot/1.0 (+https://github.com/)"
+
+# 必须勾选的那一项的原文；只匹配这个文本，避免用户自己写一个无关的 - [X] 绕过。
+CONFIRM_REQUIREMENT = "文件里不含本人或他人的姓名、学号、手机号、身份证号"
 
 
 class ImportFailure(Exception):
@@ -109,12 +126,14 @@ def _fail(reason):
 
 
 def _single_line(value, label):
-    value = (value or "").strip()
-    if not value:
+    raw = "" if value is None else str(value)
+    if not raw.strip():
         _fail("表单必填项「{}」为空。".format(label))
-    if "\n" in value or "\r" in value:
+    if any(ch in raw for ch in "\n\r\u2028\u2029"):
         _fail("表单字段「{}」应为单行内容，请重新填写。".format(label))
-    return value
+    if raw != raw.strip():
+        _fail("表单字段「{}」不能以空格或制表符开头/结尾。".format(label))
+    return raw
 
 
 def _is_blank_response(value):
@@ -123,9 +142,17 @@ def _is_blank_response(value):
 
 
 def _parse_sections(body):
-    """把 Issue Forms 的 `### 字段名` + 下一段内容解析成字典。"""
+    """把 Issue Forms 的 `### 字段名` + 下一段内容解析成字典。
+
+    只识别表单已知字段，且拒绝重复字段；字段值保留行内前后空格，
+    交给 _single_line/_validate_component 决定是否拒绝，而不是悄悄吞掉。
+    """
     heading_re = re.compile(r"^###[ \t]*(.+?)[ \t]*$", re.MULTILINE)
-    matches = list(heading_re.finditer(body))
+    matches = [
+        match
+        for match in heading_re.finditer(body)
+        if match.group(1).strip() in KNOWN_SECTION_LABELS
+    ]
     sections = {}
     for index, match in enumerate(matches):
         label = match.group(1).strip()
@@ -134,7 +161,13 @@ def _parse_sections(body):
         value = body[start:end]
         # GitHub 不会把模板注释渲染进正文，这里仍做一次清理，兼容手工粘贴。
         value = re.sub(r"<!--.*?-->", "", value, flags=re.DOTALL)
-        sections[label] = value.strip()
+        # 去掉标题后、下一个标题前的空行；不 strip 字段值自身的水平空白。
+        value = value.strip("\n")
+        value = re.sub(r"\A(?:[ \t]*\n)+", "", value)
+        value = re.sub(r"(?:\n[ \t]*)+\Z", "", value)
+        if label in sections:
+            _fail("Issue 正文中存在重复字段「{}」，无法确定以哪一段为准。".format(label))
+        sections[label] = value
     return sections
 
 
@@ -207,7 +240,16 @@ def _is_official_attachment(url):
         parsed = parse.urlsplit(url)
     except ValueError:
         return False
-    if parsed.scheme not in ("http", "https"):
+    # 只接受 HTTPS，避免明文传输和把 token 发到 http 端点。
+    if parsed.scheme != "https":
+        return False
+    if parsed.username is not None or parsed.password is not None:
+        return False
+    try:
+        port = parsed.port
+    except ValueError:
+        return False
+    if port not in (None, 443):
         return False
     host = (parsed.hostname or "").lower()
     if host not in OFFICIAL_ATTACHMENT_HOSTS:
@@ -222,6 +264,17 @@ def _is_official_attachment(url):
         )
     # user-images / private-user-images / objects 都是 GitHub 官方附件域。
     return True
+
+
+def _safe_url(url):
+    """错误信息里只展示 scheme/host/path，避免把签名 query 写进日志。"""
+    try:
+        parsed = parse.urlsplit(str(url))
+    except ValueError:
+        return "<无效链接>"
+    return "{}://{}{}".format(
+        parsed.scheme or "?", parsed.hostname or "?", (parsed.path or "")[:160]
+    )
 
 
 def _ext_from_name(name):
@@ -307,17 +360,22 @@ def _choose_extension(label_ext, header_filename, content_type, url_ext=None):
 
 def _validate_component(value, label):
     """校验单个路径分量，禁止 ..、路径分隔符和文件名禁用字符。"""
-    value = (value or "").strip()
-    if not value:
+    raw = "" if value is None else str(value)
+    if not raw.strip():
         _fail("{}不能为空。".format(label))
+    if raw != raw.strip():
+        _fail("{}不能以空格或制表符开头/结尾，已拒绝。".format(label))
+    value = raw
     if value in (".", "..") or ".." in value:
         _fail("{}包含非法路径片段「..」，已拒绝路径逃逸。".format(label))
     if any(ch in value for ch in '/\\<>:"|?*[]'):
         _fail("{}包含路径分隔符或非法字符，已拒绝。".format(label))
-    if any(ord(ch) < 32 or ord(ch) == 127 for ch in value):
+    if any(ord(ch) < 32 or 127 <= ord(ch) <= 0x9F for ch in value):
         _fail("{}包含不可见控制字符，已拒绝。".format(label))
-    if value != value.strip() or value.startswith("."):
-        _fail("{}不能以点开头或以空白开头/结尾。".format(label))
+    if any(ch in value for ch in "\u2028\u2029"):
+        _fail("{}包含 Unicode 行分隔符，已拒绝。".format(label))
+    if value.startswith("."):
+        _fail("{}不能以点开头。".format(label))
     if value.endswith((".", " ")):
         _fail("{}不能以点或空格结尾。".format(label))
     if len(value) > 120:
@@ -394,8 +452,13 @@ def _parse_form(title, body):
     confirm = _section(sections, "confirm")
     if not confirm:
         _fail("Issue 正文缺少必填项「确认」；请重新使用「上传资料」表单。")
-    if not re.search(r"^\s*-\s*\[[xX]\]", confirm, re.MULTILINE):
-        _fail("请先勾选确认项：文件里不含本人或他人的姓名、学号、手机号、身份证号。")
+    checked_lines = re.findall(
+        r"^\s*-\s*\[[xX]\]\s*(.+?)\s*$", confirm, re.MULTILINE
+    )
+    if not any(CONFIRM_REQUIREMENT in line for line in checked_lines):
+        _fail(
+            "请先勾选确认项：{}。".format(CONFIRM_REQUIREMENT)
+        )
 
     college = ""
     major = ""
@@ -495,7 +558,10 @@ def _target_directory(form):
 
 
 def _allocate_filename(target_dir, base, ext, reserved):
-    """在目标目录里选一个不冲突的文件名；冲突时从 -1 开始追加序号。"""
+    """在目标目录里选一个不冲突的文件名；重名时从 -2 开始追加序号。
+
+    第一次导入是 `...pdf`，第二次是 `...-2.pdf`，第三次是 `...-3.pdf`。
+    """
     number = 0
     while True:
         suffix = "" if number == 0 else "-{}".format(number)
@@ -505,7 +571,7 @@ def _allocate_filename(target_dir, base, ext, reserved):
         if name not in reserved and not os.path.lexists(str(target_dir / name)):
             reserved.add(name)
             return name
-        number += 1
+        number = 2 if number == 0 else number + 1
 
 
 def _human_size(num):
@@ -518,18 +584,66 @@ def _human_size(num):
 
 def _http_error_detail(exc):
     try:
-        raw = exc.read().decode("utf-8", "replace")
+        raw = exc.read(64 * 1024).decode("utf-8", "replace")
         data = json.loads(raw)
         if isinstance(data, dict):
-            return str(data.get("message") or "").strip()
+            detail = " ".join(str(data.get("message") or "").split())
+            return detail[:300]
     except Exception:
         pass
     return ""
 
 
+def _looks_like_error_document(sample, content_type):
+    """识别 HTML/JSON/XML 错误页，避免把 200 的错误页当成资料存进来。"""
+    mime = (content_type or "").split(";", 1)[0].strip().lower()
+    if mime in (
+        "text/html",
+        "application/xhtml+xml",
+        "application/json",
+        "application/problem+json",
+        "application/xml",
+        "text/xml",
+    ):
+        return True
+
+    head = sample[:2048].decode("utf-8", "ignore").lstrip("\ufeff \t\r\n").lower()
+    if head.startswith(("<!doctype html", "<html", "<head", "<body")):
+        return True
+    # 有些错误页前面有少量文本，再兜底看前 2KB 里是否出现 html 根标签。
+    return "<html" in head or "<title" in head
+
+
+class _OfficialRedirectHandler(request.HTTPRedirectHandler):
+    """只允许重定向到 GitHub 官方附件域，并在跨域时移除 Authorization。"""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not _is_official_attachment(newurl):
+            _fail(
+                "附件下载被重定向到非 GitHub 官方附件地址（{}），已拒绝。".format(
+                    _safe_url(newurl)
+                )
+            )
+        new_request = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new_request is not None:
+            try:
+                old_host = (parse.urlsplit(req.full_url).hostname or "").lower()
+                new_host = (parse.urlsplit(newurl).hostname or "").lower()
+                if old_host != new_host:
+                    new_request.remove_header("Authorization")
+            except Exception:
+                pass
+        return new_request
+
+
+_DOWNLOAD_OPENER = request.build_opener(_OfficialRedirectHandler())
+
+
 def _download_one(item, index, temp_dir):
     """下载一个附件到临时目录，返回临时文件、扩展名和大小。"""
     url = item["url"]
+    if not _is_official_attachment(url):
+        _fail("附件 #{} 不是 GitHub 官方 HTTPS 附件地址，已拒绝。".format(index))
     label_ext = _ext_from_name(item["label"]) if item["label"] else None
     url_ext = _ext_from_url(url)
 
@@ -538,14 +652,33 @@ def _download_one(item, index, temp_dir):
         "Accept": "application/octet-stream",
     }
     token = os.environ.get("GITHUB_TOKEN", "").strip()
-    if token:
+    try:
+        attachment_host = (parse.urlsplit(url).hostname or "").lower()
+    except ValueError:
+        attachment_host = ""
+    # 只对 github.com 附件端点带 token；githubusercontent 使用签名 URL，
+    # 不需要也不应该收到仓库 token。
+    if token and attachment_host in ("github.com", "www.github.com"):
         headers["Authorization"] = "Bearer {}".format(token)
 
     try:
         req = request.Request(url, headers=headers)
-        with request.urlopen(req, timeout=DOWNLOAD_TIMEOUT) as response:
+        with _DOWNLOAD_OPENER.open(req, timeout=DOWNLOAD_TIMEOUT) as response:
+            final_url = response.geturl()
+            if not _is_official_attachment(final_url):
+                _fail(
+                    "附件 #{} 下载地址被重定向到非 GitHub 官方附件地址（{}），已拒绝。".format(
+                        index, _safe_url(final_url)
+                    )
+                )
+
             content_disposition = response.headers.get("Content-Disposition")
             content_type = response.headers.get("Content-Type")
+            if _looks_like_error_document(b"", content_type):
+                _fail(
+                    "附件 #{} 返回的是 HTML/JSON/XML 错误页，"
+                    "不是资料文件，已拒绝入库。".format(index)
+                )
             header_filename = _filename_from_content_disposition(content_disposition)
             ext = _choose_extension(label_ext, header_filename, content_type, url_ext)
             if not ext:
@@ -583,11 +716,31 @@ def _download_one(item, index, temp_dir):
                         )
                     )
 
+            # 先读一小段做内容识别，确认不是 HTML 错误页后再落盘。
+            sample = response.read(64 * 1024)
+            if not sample:
+                _fail("附件 #{} 是空文件，已拒绝入库。".format(index))
+            if _looks_like_error_document(sample, content_type):
+                _fail(
+                    "附件 #{} 返回的是 HTML/JSON/XML 错误页，"
+                    "不是资料文件，已拒绝入库。".format(index)
+                )
+
             fd, tmp_name = tempfile.mkstemp(
                 prefix="attachment-{}-".format(index), dir=str(temp_dir)
             )
-            written = 0
+            written = len(sample)
+            if written > limit:
+                os.close(fd)
+                _fail(
+                    "附件 #{} 超过大小限制：{}，上限为 {}。".format(
+                        index,
+                        _human_size(written),
+                        "20MB（zip）" if zip_hint else "50MB",
+                    )
+                )
             with os.fdopen(fd, "wb") as handle:
+                handle.write(sample)
                 while True:
                     chunk = response.read(1024 * 1024)
                     if not chunk:
@@ -602,8 +755,6 @@ def _download_one(item, index, temp_dir):
                             )
                         )
                     handle.write(chunk)
-            if written == 0:
-                _fail("附件 #{} 是空文件，已拒绝入库。".format(index))
             return {
                 "tmp": Path(tmp_name),
                 "ext": ext,
@@ -628,6 +779,75 @@ def _download_one(item, index, temp_dir):
         _fail("下载附件 #{} 失败：{}".format(index, exc))
     except Exception as exc:  # 兜底，保证不打印裸 traceback
         _fail("下载附件 #{} 时发生未预期错误：{}".format(index, exc))
+
+
+def _test_file_ext(path, index):
+    """仅测试用：校验 --attachment-file 指向的本地文件并返回扩展名。"""
+    source = Path(path).expanduser()
+    if not source.is_file():
+        _fail("测试附件 #{} 不存在或不是普通文件：{}".format(index, path))
+    ext = _ext_from_name(source.name)
+    if not ext:
+        _fail("测试附件 #{} 的文件名没有可识别扩展名：{}".format(index, path))
+    return ext
+
+
+def _copy_test_file(path, index, temp_dir):
+    """仅测试用：把本地文件复制进临时目录，冒充下载结果。"""
+    source = Path(path).expanduser()
+    ext = _test_file_ext(path, index)
+    limit = MAX_ZIP_BYTES if ext == "zip" else MAX_ATTACHMENT_BYTES
+    try:
+        size = source.stat().st_size
+    except OSError as exc:
+        _fail("读取测试附件 #{} 失败：{}".format(index, exc))
+    if size > limit:
+        _fail(
+            "测试附件 #{} 超过大小限制：{}，上限为 {}。".format(
+                index,
+                _human_size(size),
+                "20MB（zip）" if ext == "zip" else "50MB",
+            )
+        )
+    if size == 0:
+        _fail("测试附件 #{} 是空文件，已拒绝入库。".format(index))
+
+    fd, tmp_name = tempfile.mkstemp(
+        prefix="attachment-{}-".format(index), dir=str(temp_dir)
+    )
+    written = 0
+    try:
+        with os.fdopen(fd, "wb") as dst, source.open("rb") as src:
+            while True:
+                chunk = src.read(1024 * 1024)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > limit:
+                    _fail(
+                        "测试附件 #{} 超过大小限制：{}，上限为 {}。".format(
+                            index,
+                            _human_size(written),
+                            "20MB（zip）" if ext == "zip" else "50MB",
+                        )
+                    )
+                dst.write(chunk)
+        if written == 0:
+            _fail("测试附件 #{} 是空文件，已拒绝入库。".format(index))
+    except BaseException:
+        try:
+            Path(tmp_name).unlink()
+        except OSError:
+            pass
+        raise
+
+    return {
+        "tmp": Path(tmp_name),
+        "ext": ext,
+        "size": written,
+        "url": "test-file:{}".format(source.name),
+        "index": index,
+    }
 
 
 def _api_get_issue(issue_number):
@@ -699,6 +919,11 @@ def _load_issue(issue_number):
     return _api_get_issue(issue_number)
 
 
+def _safe_log_text(value):
+    """把标题等外部文本压成单行，避免控制字符污染 Actions 日志/PR 正文。"""
+    return re.sub(r"[\x00-\x1f\x7f-\x9f\u2028\u2029]", " ", str(value or ""))
+
+
 def _print_meta(form):
     print("IMPORT_META course={}".format(form["course"]))
     print("IMPORT_META year={}".format(form["year"]))
@@ -747,11 +972,24 @@ def _run(args):
 
     title, body = _load_issue(args.issue_number)
     if title:
-        print("Issue #{}：{}".format(args.issue_number, title))
+        print("Issue #{}：{}".format(args.issue_number, _safe_log_text(title)))
 
     form = _parse_form(title, body)
     target_dir, _course_dir = _target_directory(form)
     target_rel = _relative(target_dir)
+
+    test_files = list(getattr(args, "attachment_file", None) or [])
+    if test_files:
+        if len(test_files) != len(form["attachments"]):
+            _fail(
+                "--attachment-file（仅测试用）数量为 {}，但 Issue 里有 {} 个附件；"
+                "两者必须一一对应。".format(len(test_files), len(form["attachments"]))
+            )
+        print(
+            "警告：已启用 --attachment-file（仅测试用），将跳过网络下载，"
+            "直接使用本地文件冒充附件。",
+            file=sys.stderr,
+        )
 
     print("课程类别：{}".format(form["category"]))
     if form["category"] == "专业课":
@@ -769,21 +1007,29 @@ def _run(args):
     if args.dry_run:
         reserved = set()
         for index, item in enumerate(form["attachments"], 1):
-            label_ext = _ext_from_name(item["label"]) if item["label"] else None
-            url_ext = _ext_from_url(item["url"])
-            ext = label_ext or url_ext
+            if test_files:
+                ext = _test_file_ext(test_files[index - 1], index)
+            else:
+                label_ext = _ext_from_name(item["label"]) if item["label"] else None
+                url_ext = _ext_from_url(item["url"])
+                ext = label_ext or url_ext
             if ext:
                 name = _allocate_filename(target_dir, base, ext, reserved)
             else:
                 name = "{}.<下载时确认扩展名>".format(base)
-                # 预占一个名字，避免多个未知扩展名互相冲突。
-                number = 0
+                # 预占一个名字，避免多个未知扩展名互相冲突；序号与正式
+                # 归档保持一致，从 -2 开始（dry-run 无法预知真实扩展名）。
+                number = 2
                 candidate = base
                 while candidate in reserved:
-                    number += 1
                     candidate = "{}-{}".format(base, number)
+                    number += 1
                 reserved.add(candidate)
-            print("附件 {}：{} → {}".format(index, item["url"], name))
+            print(
+                "附件 {}：{} → {}".format(
+                    index, _safe_log_text(item["url"]), name
+                )
+            )
 
         _print_meta(form)
         print("DRY_RUN 已通过解析与安全检查；未下载、未写入任何文件。")
@@ -795,8 +1041,25 @@ def _run(args):
     moved = []
     try:
         for index, item in enumerate(form["attachments"], 1):
-            print("正在下载附件 {}/{} ...".format(index, len(form["attachments"])))
-            downloaded.append(_download_one(item, index, temp_dir))
+            if test_files:
+                print(
+                    "正在读取测试附件 {}/{}（仅测试用，不访问网络）...".format(
+                        index, len(form["attachments"])
+                    )
+                )
+                downloaded.append(
+                    _copy_test_file(test_files[index - 1], index, temp_dir)
+                )
+            else:
+                print("正在下载附件 {}/{} ...".format(index, len(form["attachments"])))
+                downloaded.append(_download_one(item, index, temp_dir))
+
+        total_size = sum(item["size"] for item in downloaded)
+        if total_size > MAX_TOTAL_BYTES:
+            _fail(
+                "本次附件总大小为 {}，超过单个 PR 的 100MB 上限；"
+                "请分多次提交或改用网盘链接。".format(_human_size(total_size))
+            )
 
         reserved = set()
         moves = []
@@ -806,9 +1069,16 @@ def _run(args):
 
         # 全部下载并校验通过后才动 courses/；中途失败会回滚已移动的文件。
         for item, destination in moves:
-            if os.path.lexists(str(destination)):
-                _fail("目标文件已存在，已停止以避免覆盖：{}".format(_relative(destination)))
-            _move_exclusive(item["tmp"], destination)
+            # O_EXCL 仍然可能和另一个进程撞名；撞名时重新分配 -2/-3，绝不覆盖。
+            while True:
+                try:
+                    _move_exclusive(item["tmp"], destination)
+                    break
+                except FileExistsError:
+                    name = _allocate_filename(
+                        target_dir, base, item["ext"], reserved
+                    )
+                    destination = target_dir / name
             moved.append(destination)
             print(
                 "已保存：{}（{}）".format(
@@ -852,6 +1122,16 @@ def main(argv=None):
         "--dry-run",
         action="store_true",
         help="只解析和校验，不下载、不写文件",
+    )
+    parser.add_argument(
+        "--attachment-file",
+        action="append",
+        default=[],
+        metavar="PATH",
+        help=(
+            "（仅测试用）用本地文件冒充 Issue 附件，跳过网络下载；"
+            "可重复，数量必须与 Issue 附件数一致。生产环境不要使用。"
+        ),
     )
     args = parser.parse_args(argv)
 
