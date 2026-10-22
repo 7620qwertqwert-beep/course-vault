@@ -16,23 +16,67 @@ jobs:
     name: 结构与内容检查
     runs-on: ubuntu-latest
     steps:
-      - name: 检出代码（含历史，用于比对改动）
+      - name: 检出代码（PR 用 head，push 用当前分支）
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.ref }}
+
+      # ---------- 0. 准备可信脚本 ----------
+      # PR：从 base 分支取出 check.sh / build_index.py，放到仓库外运行；
+      #      PR 对 scripts/ 的修改不会被读取或执行。
+      # push：使用本分支脚本。
+      - name: 准备可信检查脚本
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -eu
+          trusted="$RUNNER_TEMP/trusted"
+          mkdir -p "$trusted"
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            if ! git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
+              git fetch --no-tags origin "$BASE_SHA"
+            fi
+            git cat-file -e "$BASE_SHA^{commit}"
+
+            git show "$BASE_SHA:scripts/check.sh" > "$trusted/check.sh"
+            git show "$BASE_SHA:scripts/build_index.py" > "$trusted/build_index.py"
+
+            if ! git diff --quiet "$BASE_SHA...HEAD" -- scripts/; then
+              echo "::warning::本 PR 修改了 scripts/；CI 只执行 base（$BASE_SHA）中的 check.sh 与 build_index.py，PR 内的脚本改动已被忽略。"
+            fi
+            trusted_source="base 分支 $BASE_SHA"
+          else
+            cp scripts/check.sh scripts/build_index.py "$trusted/"
+            trusted_source="当前分支"
+          fi
+
+          test -s "$trusted/check.sh"
+          test -s "$trusted/build_index.py"
+          chmod +x "$trusted/check.sh" "$trusted/build_index.py"
+          echo "TRUSTED_DIR=$trusted" >> "$GITHUB_ENV"
+          echo "可信脚本来源：$trusted_source"
 
       # ---------- 1. 仓库自检（命名规范 / 目录结构 / 文本敏感词） ----------
-      - name: 运行 scripts/check.sh
+      - name: 运行可信 scripts/check.sh（PR 时来自 base）
+        shell: bash
         run: |
-          chmod +x scripts/check.sh
-          bash scripts/check.sh
+          set -eu
+          bash "$TRUSTED_DIR/check.sh" --root "$GITHUB_WORKSPACE"
 
       # ---------- 索引一致性 ----------
-      - name: 索引一致性
-        run: python3 scripts/build_index.py --check
+      - name: 索引一致性（PR 时使用 base 的 build_index.py）
+        shell: bash
+        run: |
+          set -eu
+          python3 "$TRUSTED_DIR/build_index.py" --root "$GITHUB_WORKSPACE" --check
 
       # ---------- 2. 文件体积 ----------
       - name: 单文件体积检查（上限 50MB）
+        shell: bash
         run: |
           set -eu
           fail=0
@@ -48,6 +92,7 @@ jobs:
 
       # ---------- 3. 空文件刷屏 ----------
       - name: 空文件数量检查
+        shell: bash
         run: |
           set -eu
           empty=$(find courses -type f -empty ! -name '.gitkeep' 2>/dev/null | wc -l)
@@ -57,20 +102,26 @@ jobs:
             exit 1
           fi
 
-      # ---------- 4. PR 改动范围 ----------
-      - name: 改动范围检查（仅 PR 触发）
+      # ---------- 4. PR 改动范围与总体积 ----------
+      - name: 改动范围与单 PR 体积检查（仅 PR 触发）
         if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          OWNER_LOGIN: ${{ github.repository_owner }}
         run: |
-          set -eu
-          git fetch --depth=1 origin "${{ github.base_ref }}"
-          BASE="origin/${{ github.base_ref }}"
-          CHANGED=$(git diff --name-only "$BASE"...HEAD)
+          set -euo pipefail
+          BASE="${{ github.event.pull_request.base.sha }}"
+          if ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            git fetch --no-tags origin "$BASE"
+          fi
+
           DELETED=$(git diff --name-status "$BASE"...HEAD | awk '$1=="D"{print}' | wc -l)
           ADDED=$(git diff --name-status "$BASE"...HEAD | awk '$1=="A"{print}' | wc -l)
 
           echo "新增 $ADDED 个，删除 $DELETED 个"
           echo "---- 改动文件 ----"
-          echo "$CHANGED"
+          git diff --name-only "$BASE"...HEAD
 
           fail=0
 
@@ -80,31 +131,47 @@ jobs:
             fail=1
           fi
 
-          # 4.2 路径白名单：只允许改这几个位置
-          while IFS= read -r f; do
-            [ -z "$f" ] && continue
+          # 4.2 路径白名单：普通 PR 只允许 courses/** 与自动生成的 INDEX.md。
+          # 治理文件（.github/**、scripts/**、README.md、CONTRIBUTING.md、docs/**）
+          # 以及其他根目录文件一律失败，不再只告警。
+          while IFS= read -r -d '' f; do
+            [ -n "$f" ] || continue
             case "$f" in
-              courses/*|docs/*|README.md|INDEX.md|CONTRIBUTING.md|TAKEDOWN.md) ;;
-              .github/*) ;;
+              courses/*|INDEX.md) ;;
+              .github/*|scripts/*|README.md|CONTRIBUTING.md|docs/*)
+                if [ "${PR_AUTHOR:-}" = "${OWNER_LOGIN:-}" ]; then
+                  echo "::warning file=$f::维护者本人修改治理文件，放行（本次 CI 仍使用 base 分支脚本，改动自下一个 PR 起生效）"
+                else
+                  echo "::error file=$f::治理文件被修改；普通 PR 不允许，必须由维护者亲自审核"
+                  fail=1
+                fi
+                ;;
               *)
-                echo "::warning file=$f::改动位置在常规上传路径之外，维护者请确认"
+                echo "::error file=$f::改动位置不在允许范围内（普通 PR 仅允许 courses/** 与 INDEX.md）"
+                fail=1
                 ;;
             esac
-          done <<EOF
-          $CHANGED
-          EOF
+          done < <(git diff --name-only -z "$BASE"...HEAD)
 
-          # 4.3 治理文件与工作流：普通贡献者不应修改
-          for f in LICENSE scripts/check.sh scripts/new_course.py scripts/build_index.py .github/workflows/check.yml .github/CODEOWNERS CONTRIBUTING.md TAKEDOWN.md; do
-            if echo "$CHANGED" | grep -qx "$f"; then
-              echo "::warning file=$f::治理/脚本文件被修改，必须由维护者亲自审核"
-            fi
-          done
+          # 4.3 单 PR 总新增体积：新增/复制/修改/重命名文件在 HEAD 处的字节数之和。
+          total_bytes=0
+          while IFS= read -r -d '' f; do
+            [ -n "$f" ] || continue
+            size=$(git cat-file -s "HEAD:$f")
+            total_bytes=$((total_bytes + size))
+          done < <(git diff --name-only --diff-filter=ACMR -z "$BASE"...HEAD)
+
+          echo "本次 PR 新增/修改文件总大小：${total_bytes} 字节（$((total_bytes / 1048576)) MiB），上限 100 MiB"
+          if [ "$total_bytes" -gt 104857600 ]; then
+            echo "::error::本次 PR 新增/修改文件总大小 ${total_bytes} 字节，超过 100 MiB 上限；请拆分 PR 或改用网盘链接。"
+            fail=1
+          fi
 
           exit "$fail"
 
       # ---------- 5. 重复文件（同内容多处） ----------
       - name: 重复文件检测
+        shell: bash
         run: |
           set -eu
           dup=$(find courses -type f ! -name '.gitkeep' -exec md5sum {} + 2>/dev/null | sort | awk '{print $1}' | uniq -d | wc -l)

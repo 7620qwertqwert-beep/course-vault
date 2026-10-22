@@ -6,6 +6,9 @@
     python3 scripts/build_index.py          # 重新生成 INDEX.md
     python3 scripts/build_index.py --check  # 只校验，不写文件（供 CI 使用）
 
+默认操作脚本自身所在的仓库；也可用 --root 或 REPO_ROOT 环境变量指定
+待检查的仓库根目录（CI 从仓库外运行可信脚本副本时需要）。
+
 只使用 Python 3 标准库，零第三方依赖。
 """
 
@@ -18,7 +21,8 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
-# 脚本位于仓库的 scripts/ 目录下，向上一级就是仓库根目录。
+# 脚本位于仓库的 scripts/ 目录下，向上一级就是默认的仓库根目录。
+# --root / REPO_ROOT 可在运行时覆盖，供 CI 从仓库外运行可信副本。
 REPO_ROOT = Path(__file__).resolve().parent.parent
 COURSES_DIR = REPO_ROOT / "courses"
 PUBLIC_DIR = COURSES_DIR / "公共课"
@@ -85,10 +89,26 @@ def _link(path):
     return "".join(chars)
 
 
+def _set_repo_root(root):
+    """切换扫描的仓库根目录，并同步所有派生路径。"""
+    global REPO_ROOT, COURSES_DIR, PUBLIC_DIR, MAJOR_DIR, INDEX_PATH
+    REPO_ROOT = Path(root).expanduser().resolve()
+    COURSES_DIR = REPO_ROOT / "courses"
+    PUBLIC_DIR = COURSES_DIR / "公共课"
+    MAJOR_DIR = COURSES_DIR / "专业课"
+    INDEX_PATH = REPO_ROOT / "INDEX.md"
+
+
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         prog="build_index.py",
         description="扫描 courses/ 下的真实课程目录，生成或校验 INDEX.md。",
+    )
+    parser.add_argument(
+        "--root",
+        metavar="DIR",
+        default=None,
+        help="仓库根目录；默认取脚本所在仓库的根目录（也可用 REPO_ROOT 环境变量）",
     )
     parser.add_argument(
         "--check",
@@ -414,6 +434,18 @@ def _print_diff(existing, generated):
 
 def main(argv=None):
     args = parse_args(argv)
+
+    root = args.root
+    if root is None:
+        root = os.environ.get("REPO_ROOT") or REPO_ROOT
+    if not str(root).strip():
+        print("错误：--root 不能为空。", file=sys.stderr)
+        return 2
+    _set_repo_root(root)
+    if not REPO_ROOT.is_dir():
+        print("错误：仓库根目录不存在：{}".format(REPO_ROOT), file=sys.stderr)
+        return 2
+
     now = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %z")
 
     try:
