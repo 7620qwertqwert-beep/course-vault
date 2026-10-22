@@ -375,6 +375,18 @@ def _normalize_stamp_line(text):
     )
 
 
+MATERIAL_COLS_RE = re.compile(r"\| *\d+ *\| *(?:⬜ 待填|🚧 少量|✅ 可用) *\|")
+
+
+def _normalize_materials(text):
+    """把表格里的「资料数 / 状态」两列归一化。
+
+    用途：普通同学上传资料后，INDEX 里的资料数会变，但这个过程不应阻断合并；
+    结构（学院 / 专业 / 课程 增删）变化仍会被 --check 判定为不一致。
+    """
+    return MATERIAL_COLS_RE.sub("| # | * |", text)
+
+
 def _atomic_write(path, text):
     fd, tmp_name = tempfile.mkstemp(
         prefix="." + path.name + ".", suffix=".tmp", dir=str(path.parent)
@@ -462,6 +474,16 @@ def main(argv=None):
             generated, _total, _with_materials = build_index(stamp)
             if _normalize_stamp_line(existing) == generated:
                 print("[OK] INDEX.md 与自动生成结果一致。")
+                return 0
+            # 只有「资料数 / 状态」两列不一致：说明有人新传了资料，不阻断合并。
+            if _normalize_materials(_normalize_stamp_line(existing)) == _normalize_materials(
+                generated
+            ):
+                print(
+                    "[提示] INDEX.md 与目录结构一致，仅「资料数 / 状态」两列有变化"
+                    "（有人传了新资料）。不建议阻断合并，请维护者稍后运行 "
+                    "python3 scripts/build_index.py 刷新索引。"
+                )
                 return 0
             _print_diff(existing, generated)
             return 1
