@@ -1,6 +1,9 @@
 #!/bin/sh
 # 上传前自检脚本：查目录结构 / 命名规范 / 体积 / 敏感词
-# 用法： bash scripts/check.sh
+# 用法： bash scripts/check.sh [--root <仓库根目录>]
+#
+# 默认扫描脚本自身所在的仓库；CI 从仓库外运行可信副本时用 --root 指定
+# 待检查的工作树。也可用环境变量 REPO_ROOT 指定仓库根。
 #
 # 说明：本脚本只扫描文本文件与目录结构；PDF/DOCX/PPTX 等二进制资料
 # 无法通过本脚本判断内容，提交前请人工复核。
@@ -10,7 +13,64 @@
 #   courses/公共课/<课程>/
 #   courses/专业课/<学院>/<专业>/<课程>/
 
-cd "$(dirname "$0")/.." || exit 1
+usage() {
+  echo "用法： $0 [--root <仓库根目录>]" >&2
+  echo "  默认使用脚本所在仓库的根目录；也可用 REPO_ROOT 环境变量指定。" >&2
+}
+
+root_override=
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --root)
+      if [ "$#" -lt 2 ] || [ -z "$2" ]; then
+        echo "错误：--root 需要一个非空目录参数。" >&2
+        usage
+        exit 2
+      fi
+      root_override=$2
+      shift 2
+      ;;
+    --root=*)
+      root_override=${1#--root=}
+      if [ -z "$root_override" ]; then
+        echo "错误：--root 需要一个非空目录参数。" >&2
+        usage
+        exit 2
+      fi
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "错误：未知参数：$1" >&2
+      usage
+      exit 2
+      ;;
+  esac
+done
+
+if [ -n "$root_override" ]; then
+  REPO_ROOT=$root_override
+elif [ -n "${REPO_ROOT:-}" ]; then
+  : # 使用环境变量中的仓库根
+else
+  script_dir=$(CDPATH= cd "$(dirname "$0")" && pwd) || exit 1
+  REPO_ROOT=$(CDPATH= cd "$script_dir/.." && pwd) || exit 1
+fi
+
+if [ ! -d "$REPO_ROOT" ]; then
+  echo "错误：仓库根目录不存在：$REPO_ROOT" >&2
+  exit 2
+fi
+REPO_ROOT=$(CDPATH= cd "$REPO_ROOT" && pwd) || exit 1
+if [ ! -d "$REPO_ROOT/courses" ]; then
+  echo "错误：$REPO_ROOT 下没有 courses/ 目录，不像是本仓库根目录。" >&2
+  exit 2
+fi
+
+cd "$REPO_ROOT" || exit 1
 
 bad=0
 tmpdir="${TMPDIR:-/tmp}/course-vault-check.$$"
