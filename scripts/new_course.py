@@ -28,6 +28,9 @@ SUBDIRS = ("笔记", "课件", "试卷", "作业")
 # 公共课的“所属专业”统一写为全校通用。
 PUBLIC_MAJOR = "全校通用"
 
+# Windows 不允许出现在文件/目录名里的字符；课程名同时要能在网页端正常使用。
+WINDOWS_INVALID_CHARS = '<>:"/\\|?*'
+
 # Windows 不允许作为文件/目录名的保留名（大小写不敏感）。
 WINDOWS_RESERVED_NAMES = {
     "CON",
@@ -141,8 +144,12 @@ def _validate_path_name(name, label):
         return "{}不能为空".format(label)
     if name in (".", ".."):
         return "{}不能是 . 或 ..".format(label)
+    if name.startswith("."):
+        return "{}不能以点开头（隐藏目录不会进入 INDEX）".format(label)
     if any(ch in name for ch in ("/", "\\", "\x00")):
         return "{}不能包含路径分隔符".format(label)
+    if any(ch in name for ch in WINDOWS_INVALID_CHARS):
+        return "{}不能包含字符 <>:\"/\\|?*（跨平台目录名限制）".format(label)
     if any(ord(ch) < 32 for ch in name):
         return "{}不能包含控制字符".format(label)
     if name.endswith(".") or name.endswith(" "):
@@ -185,15 +192,31 @@ def _ask_category():
         print("类别只能是“公共课”或“专业课”，请重新输入。")
 
 
+def _is_course_level(path):
+    """判断路径是否位于课程层级：公共课两层，专业课四层。"""
+    try:
+        parts = path.relative_to(COURSES_DIR).parts
+    except ValueError:
+        return False
+    if len(parts) == 2 and parts[0] == "公共课":
+        return True
+    if len(parts) == 4 and parts[0] == "专业课":
+        return True
+    return False
+
+
 def _find_course_dirs(course_name):
-    """递归查找 courses/ 下所有同名课程目录，返回实际路径列表。"""
+    """递归查找 courses/ 下课程层级上的同名目录，返回实际路径列表。"""
     found = []
     if not COURSES_DIR.is_dir():
         return found
     for root, dirnames, _filenames in os.walk(str(COURSES_DIR)):
         for dirname in dirnames:
             if dirname == course_name:
-                found.append(Path(root) / dirname)
+                candidate = Path(root) / dirname
+                # 只认课程层级，避免把课程内部的「笔记」「课件」等同名目录误判为重名。
+                if _is_course_level(candidate):
+                    found.append(candidate)
     return sorted(found)
 
 
@@ -346,24 +369,18 @@ def main(argv=None):
         profession = PUBLIC_MAJOR
         course_dir = COURSES_DIR / category / course_name
 
-    # 递归查找同名课程目录，避免在错误的层级里再建一份重复目录。
+    # 同名课程可以存在于不同学院/专业；这里只提示，不再拒绝创建。
+    # 目标路径本身的冲突由下面的 README.md / 目录检查处理。
     existing_dirs = _find_course_dirs(course_name)
-    if existing_dirs:
-        print("提示：已存在同名课程目录：")
-        for existing in existing_dirs:
+    other_dirs = [path for path in existing_dirs if path != course_dir]
+    if other_dirs:
+        print("提示：其他学院/专业已有同名课程目录（允许，不同专业可能有同名课）：")
+        for existing in other_dirs:
             print("  {}".format(existing))
 
     if course_dir.exists() and not course_dir.is_dir():
         print(
             "错误：目标路径已存在且不是目录：{}".format(course_dir),
-            file=sys.stderr,
-        )
-        return 1
-
-    if course_dir not in existing_dirs and existing_dirs:
-        print(
-            "错误：同名课程已存在于其他路径，请直接使用上面的实际路径，"
-            "或换一个课程名；本次未创建任何文件。",
             file=sys.stderr,
         )
         return 1

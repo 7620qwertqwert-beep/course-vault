@@ -34,8 +34,55 @@ STATUS_READY = "✅ 可用"
 
 # 自动生成提示行；--check 会复用旧文件里的时间，避免每次校验都因时间不同而失败。
 STAMP_RE = re.compile(
-    r"^> 🤖 自动生成时间：(.+?) ｜ 总课程数：\d+\s*$", re.MULTILINE
+    r"^> 🤖 自动生成时间：(.+?) ｜ 总课程数：(\d+)[ \t]*$", re.MULTILINE
 )
+
+# Markdown 链接目标里会破坏解析的 ASCII 字符。中文保持原样，便于人工阅读。
+_LINK_ESCAPES = {
+    " ": "%20",
+    '"': "%22",
+    "&": "%26",
+    "#": "%23",
+    "%": "%25",
+    "(": "%28",
+    ")": "%29",
+    "<": "%3C",
+    ">": "%3E",
+    "?": "%3F",
+    "[": "%5B",
+    "\\": "%5C",
+    "]": "%5D",
+    "^": "%5E",
+    "`": "%60",
+    "{": "%7B",
+    "|": "%7C",
+    "}": "%7D",
+}
+
+
+class LayoutError(Exception):
+    """课程目录层级不符合当前约定。"""
+
+
+def _relative(path):
+    """返回相对仓库根的 POSIX 路径；异常路径退化为绝对路径。"""
+    try:
+        return path.relative_to(REPO_ROOT).as_posix()
+    except ValueError:
+        return str(path)
+
+
+def _link(path):
+    """转义链接目标中的特殊字符，避免空格、竖线、#、括号等破坏链接。"""
+    chars = []
+    for char in path:
+        if char in _LINK_ESCAPES:
+            chars.append(_LINK_ESCAPES[char])
+        elif ord(char) < 0x20 or ord(char) == 0x7F:
+            chars.append("%{:02X}".format(ord(char)))
+        else:
+            chars.append(char)
+    return "".join(chars)
 
 
 def parse_args(argv=None):
@@ -114,9 +161,31 @@ def _status(count):
     return STATUS_READY
 
 
+def _is_course_dir(path):
+    """判断目录是否像一门课：有 README.md 或任一资料子目录。"""
+    if (path / "README.md").is_file():
+        return True
+    return any((path / subdir).is_dir() for subdir in SUBDIRS)
+
+
+def _course_children(directory):
+    """返回目录下看起来是课程的可见子目录。"""
+    return [
+        path
+        for path in directory.iterdir()
+        if path.is_dir() and not path.name.startswith(".") and _is_course_dir(path)
+    ]
+
+
 def _cell(value):
-    """转义 Markdown 表格中的竖线与换行。"""
-    return " ".join(str(value).split()).replace("|", "\\|")
+    """转义 Markdown 表格中的反斜线、竖线与换行。"""
+    text = " ".join(str(value).split())
+    return text.replace("\\", "\\\\").replace("|", "\\|")
+
+
+def _link_text(value):
+    """转义链接文字中的方括号，避免提前结束链接。"""
+    return _cell(value).replace("[", "\\[").replace("]", "\\]")
 
 
 def _load_course(course_dir):
@@ -151,8 +220,8 @@ def _table(courses):
     for course in _sort_courses(courses):
         lines.append(
             "| [{}]({}) | {} | {} | {} | {} |".format(
-                _cell(course["name"]),
-                course["link"],
+                _link_text(course["name"]),
+                _link(course["link"]),
                 _cell(course["nature"]),
                 _cell(course["difficulty"]),
                 course["count"],
@@ -165,11 +234,7 @@ def _table(courses):
 def _public_courses():
     if not PUBLIC_DIR.is_dir():
         return []
-    return [
-        path
-        for path in PUBLIC_DIR.iterdir()
-        if path.is_dir() and not path.name.startswith(".")
-    ]
+    return _course_children(PUBLIC_DIR)
 
 
 def _major_courses():
@@ -187,6 +252,17 @@ def _major_courses():
         key=lambda path: _sort_key(path.name),
     )
     for college_dir in colleges:
+        # 专业课/<学院> 下不应直接出现课程卡片或资料子目录；出现即说明层级放错了。
+        if (college_dir / "README.md").is_file() or any(
+            (college_dir / subdir).is_dir() for subdir in SUBDIRS
+        ):
+            raise LayoutError(
+                "专业课层级错误：{} 下直接出现课程卡片或资料子目录；"
+                "应为 courses/专业课/<学院>/<专业>/<课程>/".format(
+                    _relative(college_dir)
+                )
+            )
+
         majors = sorted(
             (
                 path
@@ -196,11 +272,19 @@ def _major_courses():
             key=lambda path: _sort_key(path.name),
         )
         for major_dir in majors:
-            courses = [
-                path
-                for path in major_dir.iterdir()
-                if path.is_dir() and not path.name.startswith(".")
-            ]
+            courses = _course_children(major_dir)
+            # 旧三层结构会把课程目录放在“专业”这一层；它自身带 README/资料子目录，
+            # 但下面不会再有课程目录。宁可显式报错，也不要把它错当成专业。
+            legacy_course = (major_dir / "README.md").is_file() or any(
+                (major_dir / subdir).is_dir() for subdir in SUBDIRS
+            )
+            if not courses and legacy_course:
+                raise LayoutError(
+                    "检测到旧三层结构或层级错误：{}；"
+                    "应为 courses/专业课/<学院>/<专业>/<课程>/".format(
+                        _relative(major_dir)
+                    )
+                )
             if courses:
                 result.append((college_dir.name, major_dir.name, courses))
     return result
@@ -258,6 +342,17 @@ def build_index(generated_at):
 def _extract_stamp(text):
     match = STAMP_RE.search(text)
     return match.group(1).strip() if match else None
+
+
+def _normalize_stamp_line(text):
+    """规范化时间戳行的空白，但保留总课程数，供 --check 比对。"""
+    return STAMP_RE.sub(
+        lambda match: "> 🤖 自动生成时间：{} ｜ 总课程数：{}".format(
+            match.group(1).strip(), match.group(2)
+        ),
+        text,
+        count=1,
+    )
 
 
 def _atomic_write(path, text):
@@ -321,28 +416,40 @@ def main(argv=None):
     args = parse_args(argv)
     now = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %z")
 
-    if args.check:
-        if not INDEX_PATH.is_file():
-            print(
-                "错误：INDEX.md 不存在，请先运行 python3 scripts/build_index.py",
-                file=sys.stderr,
-            )
-            return 1
-        existing = _read_text(INDEX_PATH)
-        # 复用旧文件中的生成时间，使 --check 只关注内容变化。
-        stamp = _extract_stamp(existing) or now
-        generated, _total, _with_materials = build_index(stamp)
-        if existing == generated:
-            print("[OK] INDEX.md 与自动生成结果一致。")
-            return 0
-        _print_diff(existing, generated)
-        return 1
-
-    generated, total, with_materials = build_index(now)
     try:
+        if args.check:
+            if not INDEX_PATH.is_file():
+                print(
+                    "错误：INDEX.md 不存在，请先运行 python3 scripts/build_index.py",
+                    file=sys.stderr,
+                )
+                return 1
+            existing = _read_text(INDEX_PATH)
+            # 复用旧文件中的生成时间并规范化该行空白，使 --check 只关注内容变化。
+            stamp = _extract_stamp(existing) or now
+            generated, _total, _with_materials = build_index(stamp)
+            if _normalize_stamp_line(existing) == generated:
+                print("[OK] INDEX.md 与自动生成结果一致。")
+                return 0
+            _print_diff(existing, generated)
+            return 1
+
+        generated, total, with_materials = build_index(now)
         _atomic_write(INDEX_PATH, generated)
+    except LayoutError as exc:
+        print("错误：{}".format(exc), file=sys.stderr)
+        return 1
+    except UnicodeError as exc:
+        print(
+            "错误：课程路径或文本含无法写入 UTF-8 的字符：{}".format(exc),
+            file=sys.stderr,
+        )
+        return 1
     except OSError as exc:
-        print("错误：写入 INDEX.md 失败：{}".format(exc), file=sys.stderr)
+        print(
+            "错误：读取课程目录或写入 INDEX.md 失败：{}".format(exc),
+            file=sys.stderr,
+        )
         return 1
 
     print(
