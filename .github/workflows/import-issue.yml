@@ -204,6 +204,10 @@ jobs:
           echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
           echo "branch=$branch" >> "$GITHUB_OUTPUT"
           echo "已创建 PR #$pr_number（分支 $branch）"
+          # 开启 auto-merge：CI 检查通过后由 GitHub 自动 squash 合并，维护者无需再点。
+          if ! gh pr merge "$pr_number" --squash --auto; then
+            echo "::warning::未能开启 auto-merge（可能未在仓库设置中允许 auto-merge），PR 可由维护者手动合并。"
+          fi
 
       - name: 通知 Issue 并添加已入库标签
         if: steps.guard.outputs.skip != 'true' && steps.pr.outputs.changed == 'true'
@@ -213,7 +217,7 @@ jobs:
         run: |
           set -euo pipefail
           gh label create "已入库" --color 0E8A16 --description "机器人已生成归档 PR" --force >/dev/null 2>&1 || true
-          gh issue comment "$ISSUE_NUMBER" --body "已生成 PR #${PR_NUMBER}，CI 通过后由维护者合并"
+          gh issue comment "$ISSUE_NUMBER" --body "已生成 PR #${PR_NUMBER}，已开启自动合并；CI 检查通过后会自己合进 main，不用再点。"
           gh issue edit "$ISSUE_NUMBER" --add-label "已入库"
 
       - name: 失败时通知 Issue
