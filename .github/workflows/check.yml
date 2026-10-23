@@ -176,8 +176,12 @@ jobs:
           # 4.1 批量删除保护：一次删超过 20 个文件必须人工确认
           #     （自动生成的上传模板已在 4.0 里剔除，不计入此处）
           if [ "$DELETED_MANUAL" -gt 20 ]; then
-            echo "::error::本次删除了 $DELETED_MANUAL 个人工维护的文件（上限 20），疑似批量破坏。请拆成多个 PR 或由维护者说明原因。"
-            fail=1
+            if [ "${PR_AUTHOR:-}" = "${OWNER_LOGIN:-}" ]; then
+              echo "::warning::维护者本次删除 $DELETED_MANUAL 个文件（超过 20），已放行"
+            else
+              echo "::error::本次删除了 $DELETED_MANUAL 个人工维护的文件（上限 20），疑似批量破坏。请拆成多个 PR 或由维护者说明原因。"
+              fail=1
+            fi
           fi
 
           # 4.2 路径白名单：普通 PR 只允许 courses/** 与自动生成的 INDEX.md。
