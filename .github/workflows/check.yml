@@ -187,7 +187,7 @@ jobs:
             [ -n "$f" ] || continue
             case "$f" in
               courses/*|INDEX.md) ;;
-              .github/*|scripts/*|tests/*|_template/*|README.md|CONTRIBUTING.md|TAKEDOWN.md|LICENSE|docs/*)
+              .github/*|.gitee/*|scripts/*|tests/*|_template/*|README.md|CONTRIBUTING.md|TAKEDOWN.md|LICENSE|docs/*)
                 if [ "${PR_AUTHOR:-}" = "${OWNER_LOGIN:-}" ]; then
                   echo "::warning file=$f::维护者本人修改治理文件，放行（本次 CI 仍使用 base 分支脚本，改动自下一个 PR 起生效）"
                 else

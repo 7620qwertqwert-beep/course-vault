@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 国内镜像（Gitee）
+    url: https://gitee.com/youliboshi/course-vault
+    about: 打不开 GitHub 时用这里浏览和下载
