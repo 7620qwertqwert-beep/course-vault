@@ -13,6 +13,10 @@
   * 附件数量 1~5 个，单个不超过 50MB（zip 不超过 20MB），合计不超过 100MB；
   * 扩展名只允许 pdf/doc/docx/ppt/pptx/xls/xlsx/md/txt/jpg/jpeg/png/zip。
 
+学院、专业、课程名允许自由填写：学院支持末尾括号说明，专业支持
+「学院·专业」「学院/专业」或只写专业名；校验失败时用 difflib 给出
+最接近的 1~3 个候选。容错只影响“找哪个真实目录”，不会放宽上面的安全检查。
+
 本地调试：
     IMPORT_ISSUE_BODY_FILE=/tmp/fake_issue.md \
     IMPORT_ISSUE_TITLE='[上传] 测试' \
@@ -26,6 +30,7 @@
 """
 
 import argparse
+import difflib
 import json
 import os
 import re
@@ -125,15 +130,22 @@ def _fail(reason):
     raise ImportFailure(reason)
 
 
+def _normalize_spaces(value):
+    """把全角/半角空白统一成半角空格，并去掉首尾空白。"""
+    text = "" if value is None else str(value)
+    text = "".join(" " if ch.isspace() else ch for ch in text)
+    text = re.sub(r" +", " ", text)
+    return text.strip()
+
+
 def _single_line(value, label):
     raw = "" if value is None else str(value)
-    if not raw.strip():
-        _fail("表单必填项「{}」为空。".format(label))
     if any(ch in raw for ch in "\n\r\u2028\u2029"):
         _fail("表单字段「{}」应为单行内容，请重新填写。".format(label))
-    if raw != raw.strip():
-        _fail("表单字段「{}」不能以空格或制表符开头/结尾。".format(label))
-    return raw
+    text = _normalize_spaces(raw)
+    if not text:
+        _fail("表单必填项「{}」为空。".format(label))
+    return text
 
 
 def _is_blank_response(value):
@@ -145,7 +157,7 @@ def _parse_sections(body):
     """把 Issue Forms 的 `### 字段名` + 下一段内容解析成字典。
 
     只识别表单已知字段，且拒绝重复字段；字段值保留行内前后空格，
-    交给 _single_line/_validate_component 决定是否拒绝，而不是悄悄吞掉。
+    交给 _single_line 统一去掉首尾空白后再做校验。
     """
     heading_re = re.compile(r"^###[ \t]*(.+?)[ \t]*$", re.MULTILINE)
     matches = [
@@ -383,6 +395,156 @@ def _validate_component(value, label):
     return value
 
 
+def _iter_subdirs(base):
+    """列出目录下的真实子目录名；目录不存在时返回空列表。"""
+    try:
+        return sorted(
+            child.name
+            for child in base.iterdir()
+            if child.is_dir() and not child.name.startswith(".")
+        )
+    except OSError:
+        return []
+
+
+def _college_names():
+    return _iter_subdirs(COURSES_DIR / "专业课")
+
+
+def _major_names(college):
+    return _iter_subdirs(COURSES_DIR / "专业课" / college)
+
+
+def _all_major_pairs():
+    return [
+        (college, major)
+        for college in _college_names()
+        for major in _major_names(college)
+    ]
+
+
+def _closest(query, candidates, limit=3):
+    """用 difflib 找最接近的 1~3 个候选；找不到时逐步放低门槛。"""
+    unique = sorted({item for item in candidates if item})
+    if not unique:
+        return []
+    for cutoff in (0.6, 0.3, 0.0):
+        matches = difflib.get_close_matches(query, unique, n=limit, cutoff=cutoff)
+        if matches:
+            return matches
+    return []
+
+
+def _suggestion_text(items):
+    return "、".join(items)
+
+
+def _strip_trailing_parenthetical(text):
+    """去掉末尾的括号说明，例如「计算机与信息技术学院（软件学院）」。"""
+    previous = None
+    while text and text != previous:
+        previous = text
+        text = re.sub(r"\s*[（(][^（）()]*[）)]\s*$", "", text)
+        text = _normalize_spaces(text)
+    return text
+
+
+def _resolve_college(value, label="开课学院"):
+    """把用户填写的学院归一成 courses/专业课 下的真实目录名。"""
+    text = _strip_trailing_parenthetical(_single_line(value, label))
+    if not text:
+        _fail("{}去掉括号说明后为空。".format(label))
+    text = _validate_component(text, label)
+
+    colleges = _college_names()
+    if text in colleges:
+        return text
+
+    suggestions = _closest(text, colleges)
+    if suggestions:
+        _fail(
+            "找不到学院「{}」。你是不是想写：{} ？"
+            "可用的学院共 {} 个，见 README 的「按学院直达」。".format(
+                text, _suggestion_text(suggestions), len(colleges)
+            )
+        )
+    _fail("找不到学院「{}」。仓库里暂时没有可用的学院目录，请联系维护者。".format(text))
+
+
+def _resolve_major(value):
+    """解析「学院·专业」「学院/专业」或只写专业名，返回 (学院, 专业)。"""
+    text = _single_line(value, "所属专业")
+
+    # 统一分隔符，并容忍分隔符两侧的空格。
+    text = re.sub(r"\s*[·/／]\s*", "·", text)
+
+    if "·" in text:
+        parts = text.split("·")
+        if len(parts) != 2 or not all(parts):
+            _fail(
+                "所属专业格式不正确：{}；请写成「学院·专业」「学院/专业」，"
+                "或只写专业名。".format(text)
+            )
+        college = _resolve_college(parts[0], "所属专业中的学院名")
+        major = _validate_component(parts[1], "所属专业中的专业名")
+        majors = _major_names(college)
+        if major in majors:
+            return college, major
+
+        suggestions = _closest(major, majors)
+        suggestion_text = _suggestion_text(
+            ["{}·{}".format(college, item) for item in suggestions]
+        )
+        if suggestion_text:
+            _fail(
+                "在学院「{}」下找不到专业「{}」。你是不是想写：{} ？".format(
+                    college, major, suggestion_text
+                )
+            )
+        _fail(
+            "在学院「{}」下找不到专业「{}」。该学院下暂时没有专业目录，"
+            "请联系维护者。".format(college, major)
+        )
+
+    major = _validate_component(text, "所属专业中的专业名")
+    pairs = [(college, name) for college, name in _all_major_pairs() if name == major]
+    if len(pairs) == 1:
+        return pairs[0]
+    if len(pairs) > 1:
+        _fail(
+            "专业「{}」在多个学院都有，无法自动判断：{}。"
+            "请在「所属专业」里写成「学院·专业」。".format(
+                major,
+                _suggestion_text(
+                    ["{}·{}".format(college, name) for college, name in pairs]
+                ),
+            )
+        )
+
+    all_pairs = _all_major_pairs()
+    suggested_majors = _closest(major, [name for _college, name in all_pairs])
+    colleges_by_major = {}
+    for college, name in all_pairs:
+        colleges_by_major.setdefault(name, []).append(college)
+    suggestion_items = []
+    for name in suggested_majors:
+        for college in colleges_by_major.get(name, []):
+            suggestion_items.append("{}·{}".format(college, name))
+            if len(suggestion_items) >= 3:
+                break
+        if len(suggestion_items) >= 3:
+            break
+
+    if suggestion_items:
+        _fail(
+            "找不到专业「{}」。你是不是想写：{} ？"
+            "候选都带上了所属学院，请按「学院·专业」填写。".format(
+                major, _suggestion_text(suggestion_items)
+            )
+        )
+    _fail("找不到专业「{}」。仓库里暂时没有可用的专业目录，请联系维护者。".format(major))
+
+
 def _relative(path):
     try:
         return path.relative_to(REPO_ROOT).as_posix()
@@ -463,29 +625,28 @@ def _parse_form(title, body):
     college = ""
     major = ""
     if category == "专业课":
-        college = _validate_component(
-            _single_line(_required_section(sections, "college", "开课学院"), "开课学院"),
-            "开课学院",
+        major_college, major = _resolve_major(
+            _required_section(sections, "major", "所属专业")
         )
-        major_value = _single_line(
-            _required_section(sections, "major", "所属专业"), "所属专业"
-        )
-        if "·" not in major_value:
-            _fail(
-                "所属专业格式不正确：{}；必须从下拉框选择「学院名·专业名」。".format(
-                    major_value
+        college_value = _section(sections, "college")
+        if college_value:
+            college = _resolve_college(college_value, "开课学院")
+            if college != major_college:
+                _fail(
+                    "开课学院与所属专业不一致：开课学院写的是「{}」，"
+                    "专业「{}」实际属于「{}」。请把开课学院改成「{}」，"
+                    "或在所属专业里写成「{}·{}」。".format(
+                        college,
+                        major,
+                        major_college,
+                        major_college,
+                        major_college,
+                        major,
+                    )
                 )
-            )
-        college_part, major_name = major_value.split("·", 1)
-        college_part = _validate_component(college_part, "所属专业中的学院名")
-        major_name = _validate_component(major_name, "所属专业中的专业名")
-        if college != college_part:
-            _fail(
-                "开课学院与所属专业不一致：学院选的是「{}」，专业是「{}」。".format(
-                    college, major_value
-                )
-            )
-        major = major_name
+        else:
+            # 只写专业名也可以：学院从专业解析结果里带出来。
+            college = major_college
 
     attachments_text = _required_section(sections, "attachments", "附件")
     all_links = _parse_attachments(attachments_text)
@@ -536,9 +697,28 @@ def _target_directory(form):
 
     course_dir = _resolve_inside_courses(course_parts)
     if not course_dir.is_dir():
+        if form["category"] == "公共课":
+            available = _iter_subdirs(COURSES_DIR / "公共课")
+            scope = "公共课"
+        else:
+            available = _iter_subdirs(
+                COURSES_DIR / "专业课" / form["college"] / form["major"]
+            )
+            scope = "{}·{}".format(form["college"], form["major"])
+        suggestions = _closest(form["course"], available)
+        if suggestions:
+            _fail(
+                "课程目录不存在：{}。你是不是想写：{} ？"
+                "请确认「课程名称」与仓库里的课程文件夹名完全一致"
+                "（注意不要多字、少字或写错别字）。".format(
+                    _relative(course_dir), _suggestion_text(suggestions)
+                )
+            )
         _fail(
-            "课程目录不存在：{}。请确认「课程名称」与仓库里的课程文件夹名完全一致"
-            "（注意不要多字、少字或写错别字）。".format(_relative(course_dir))
+            "课程目录不存在：{}。{}下暂时没有课程目录，"
+            "请先把课程信息发给维护者建目录。".format(
+                _relative(course_dir), scope
+            )
         )
 
     target_dir = _resolve_inside_courses(course_parts + [type_dir])
