@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>上传资料 · 信师大南湖课栈</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='28' fill='%23e26d97'/%3E%3C/svg%3E">
+<style>
+  :root{--pink:#e26d97;--pink-soft:#fdeef3;--ink:#23212a;--muted:#7a7586;--line:#efe9ef;--bg:#fdfbfc;--ok:#2e9e6b;--bad:#d93b5c}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;line-height:1.55;padding:0 14px 48px}
+  header{padding:22px 0 8px;text-align:center}
+  h1{margin:0;font-size:21px}
+  h1 span{color:var(--pink)}
+  .sub{margin:6px 0 0;color:var(--muted);font-size:13px}
+  .panel{background:#fff;border:1px solid var(--line);border-radius:16px;padding:15px;margin:14px 0;box-shadow:0 2px 10px rgba(226,109,151,.05)}
+  label{display:block;font-size:13px;color:var(--muted);margin:0 0 6px}
+  .row{margin-bottom:13px}
+  .row:last-child{margin-bottom:0}
+  select,input[type=text]{width:100%;padding:12px;font-size:16px;color:var(--ink);background:#fff;border:1px solid var(--line);border-radius:11px;appearance:none}
+  select:disabled,input:disabled{background:#f8f6f8;color:var(--muted)}
+  select:focus,input:focus{outline:none;border-color:var(--pink)}
+  .hint{font-size:12px;color:var(--muted);margin-top:6px}
+  .drop{border:1.5px dashed #e6c9d6;border-radius:14px;padding:20px 14px;text-align:center;color:var(--muted);font-size:14px;background:#fffdfe}
+  .drop.on{border-color:var(--pink);background:var(--pink-soft);color:var(--pink)}
+  .drop b{color:var(--pink)}
+  .files{margin:10px 0 0;padding:0;list-style:none;font-size:13px}
+  .files li{padding:6px 2px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:8px}
+  .files li:last-child{border-bottom:none}
+  .files .sz{color:var(--muted);white-space:nowrap}
+  button.submit{width:100%;padding:14px;font-size:16px;font-weight:600;color:#fff;background:var(--pink);border:none;border-radius:12px;margin-top:4px}
+  button.submit:disabled{background:#e8c9d6}
+  .bar{height:6px;border-radius:4px;background:var(--line);margin-top:12px;overflow:hidden;display:none}
+  .bar i{display:block;height:100%;width:0;background:var(--pink);transition:width .2s}
+  .result{margin-top:12px;font-size:14px;display:none;border-radius:12px;padding:12px;word-break:break-all}
+  .result.ok{display:block;background:#eefaf3;color:var(--ok);border:1px solid #cdeedc}
+  .result.bad{display:block;background:#fdeef1;color:var(--bad);border:1px solid #f6cdd7}
+  .result a{color:inherit;font-weight:600}
+  footer{text-align:center;color:var(--muted);font-size:12px;margin-top:20px}
+  footer a{color:var(--pink);text-decoration:none}
+</style>
+</head>
+<body>
+<header>
+  <h1>上传资料 · <span>南湖课栈</span></h1>
+  <p class="sub">选好课程，把文件拖进来就行；不用注册，不用装软件。</p>
+</header>
+
+<div class="panel">
+  <div class="row">
+    <label for="college">① 学院</label>
+    <select id="college" disabled><option value="">加载中…</option></select>
+  </div>
+  <div class="row">
+    <label for="major">② 专业</label>
+    <select id="major" disabled><option value="">先选学院</option></select>
+  </div>
+  <div class="row">
+    <label for="course">③ 课程</label>
+    <select id="course" disabled><option value="">先选专业</option></select>
+  </div>
+  <div class="row">
+    <label for="year">④ 年份学期</label>
+    <input type="text" id="year" placeholder="2025秋" autocomplete="off">
+    <div class="hint">写成 20xx + 春/秋，例如 2023春、2025秋</div>
+  </div>
+  <div class="row">
+    <label for="type">⑤ 资料类型</label>
+    <select id="type">
+      <option value="">请选择</option>
+      <option>笔记</option><option>课件</option><option>试卷</option>
+      <option>作业</option><option>实验报告</option><option>复习资料</option>
+    </select>
+  </div>
+  <div class="row">
+    <label>⑥ 文件（最多 5 个，单个不超过 50MB）</label>
+    <div class="drop" id="drop">
+      点这里选文件，或把文件<b>拖到这里</b><br>
+      <span style="font-size:12px">pdf / doc / ppt / xls / md / txt / jpg / png / zip</span>
+    </div>
+    <input type="file" id="file" multiple style="display:none">
+    <ul class="files" id="files"></ul>
+  </div>
+  <button class="submit" id="go">提交</button>
+  <div class="bar" id="bar"><i></i></div>
+  <div class="result" id="result"></div>
+</div>
+
+<footer>
+  <a href="https://gitee.com/youliboshi/course-vault">返回资料库首页</a>　·　有问题在 Issues 里说一声
+</footer>
+
+<script>
+const $ = id => document.getElementById(id);
+const API = location.pathname.includes('/docs/') ? '../api' : '/api';
+let picked = [];
+
+function opt(sel, text, value){
+  const o = document.createElement('option');
+  o.textContent = text; o.value = value === undefined ? text : value;
+  sel.appendChild(o);
+}
+
+fetch(API + '/tree').then(r => r.json()).then(d => {
+  const c = $('college');
+  c.innerHTML = '<option value="">请选择学院</option>';
+  d.colleges.forEach(x => opt(c, x.name));
+  opt(c, '公共课（全校通用）', '__public__');
+  c.disabled = false;
+  c.onchange = () => {
+    const v = c.value, mj = $('major'), cs = $('course');
+    mj.innerHTML = ''; cs.innerHTML = '<option value="">先选专业</option>'; cs.disabled = true;
+    if (!v){ mj.innerHTML = '<option value="">先选学院</option>'; mj.disabled = true; return; }
+    mj.disabled = false;
+    if (v === '__public__'){
+      mj.innerHTML = '<option value="__public__">公共课</option>';
+      mj.disabled = true;
+      cs.disabled = false;
+      cs.innerHTML = '<option value="">请选择课程</option>';
+      d.public.forEach(k => opt(cs, k));
+      return;
+    }
+    mj.innerHTML = '<option value="">请选择专业</option>';
+    const col = d.colleges.find(x => x.name === v);
+    col.majors.forEach(m => opt(mj, m.name));
+    mj.onchange = () => {
+      cs.innerHTML = '<option value="">请选择课程</option>';
+      cs.disabled = false;
+      const mm = col.majors.find(x => x.name === mj.value);
+      (mm ? mm.courses : []).forEach(k => opt(cs, k));
+    };
+  };
+}).catch(() => {
+  $('college').innerHTML = '<option value="">课程数据加载失败，请刷新</option>';
+});
+
+const drop = $('drop'), fileInput = $('file');
+drop.onclick = () => fileInput.click();
+['dragenter','dragover'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.add('on'); }));
+['dragleave','drop'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.remove('on'); }));
+drop.addEventListener('drop', ev => { addFiles(ev.dataTransfer.files); });
+fileInput.onchange = () => addFiles(fileInput.files);
+
+function addFiles(list){
+  for (const f of list){
+    if (picked.length >= 5){ alert('最多 5 个文件'); break; }
+    if (f.size > 50 * 1024 * 1024){ alert(f.name + ' 超过 50MB'); continue; }
+    picked.push(f);
+  }
+  render();
+}
+function render(){
+  const ul = $('files');
+  ul.innerHTML = '';
+  picked.forEach((f, i) => {
+    const li = document.createElement('li');
+    const name = document.createElement('span'); name.textContent = f.name;
+    const right = document.createElement('span'); right.className = 'sz';
+    right.textContent = (f.size/1048576).toFixed(1) + ' MB';
+    right.onclick = () => { picked.splice(i,1); render(); };
+    right.style.cursor = 'pointer';
+    li.appendChild(name); li.appendChild(right);
+    ul.appendChild(li);
+  });
+  if (picked.length) ul.appendChild(Object.assign(document.createElement('li'),
+    {textContent:'（点右侧大小可移除）', style:'color:#a8a3b3;font-size:12px;justify-content:flex-end'}));
+}
+
+$('go').onclick = () => {
+  const college = $('college').value, major = $('major').value,
+        course = $('course').value, year = $('year').value.trim(), type = $('type').value;
+  const res = $('result'); res.className = 'result'; res.textContent = '';
+  if (!college || !course || !year || !type || !picked.length){
+    res.className = 'result bad'; res.textContent = '还有没填的：学院 / 课程 / 年份学期 / 类型 / 文件都要有'; return;
+  }
+  const fd = new FormData();
+  fd.append('college', college === '__public__' ? '' : college);
+  fd.append('major', major === '__public__' ? '' : major);
+  fd.append('course', course);
+  fd.append('year', year);
+  fd.append('type', type);
+  picked.forEach(f => fd.append('files', f));
+
+  const xhr = new XMLHttpRequest();
+  xhr.open('POST', API + '/upload');
+  $('go').disabled = true; $('bar').style.display = 'block';
+  xhr.upload.onprogress = e => {
+    if (e.lengthComputable) $('bar').firstElementChild.style.width = (e.loaded/e.total*100).toFixed(0) + '%';
+  };
+  xhr.onload = () => {
+    $('go').disabled = false;
+    let d = {};
+    try { d = JSON.parse(xhr.responseText); } catch(e){}
+    if (xhr.status === 200 && d.ok){
+      res.className = 'result ok';
+      res.innerHTML = '已提交，正在归档。' + (d.pr ? '<br>' + d.pr.replace(/(https?:\/\/\S+)/, '<a href="$1" target="_blank">$1</a>') : '') +
+                      (d.skipped_dup ? '<br>（有 ' + d.skipped_dup + ' 个文件和已有文件内容相同，已跳过）' : '');
+      picked = []; render(); $('bar').firstElementChild.style.width = '0';
+      setTimeout(()=>$('bar').style.display='none', 800);
+    } else {
+      res.className = 'result bad';
+      res.textContent = d.error || ('提交失败（HTTP ' + xhr.status + '）');
+      $('bar').style.display = 'none';
+    }
+  };
+  xhr.onerror = () => { $('go').disabled = false; $('bar').style.display='none';
+    res.className='result bad'; res.textContent='网络中断了，换个网络或稍后再试'; };
+  xhr.send(fd);
+};
+</script>
+</body>
+</html>
