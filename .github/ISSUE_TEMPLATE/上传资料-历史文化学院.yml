@@ -28,10 +28,10 @@ body:
     id: major
     attributes:
       label: 所属专业
-      description: "只列出「历史文化学院」下的专业；请选择「历史文化学院·专业」。"
+      description: "只列出「历史文化学院」下的专业；直接选专业名即可，不用带学院前缀。"
       options:
-        - "历史文化学院·历史学"
-        - "历史文化学院·文化产业管理"
+        - "历史学"
+        - "文化产业管理"
     validations:
       required: true
 

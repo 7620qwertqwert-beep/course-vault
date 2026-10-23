@@ -28,11 +28,11 @@ body:
     id: major
     attributes:
       label: 所属专业
-      description: "只列出「国际教育学院」下的专业；请选择「国际教育学院·专业」。"
+      description: "只列出「国际教育学院」下的专业；直接选专业名即可，不用带学院前缀。"
       options:
-        - "国际教育学院·土木工程"
-        - "国际教育学院·生物技术"
-        - "国际教育学院·经济学"
+        - "土木工程"
+        - "生物技术"
+        - "经济学"
     validations:
       required: true
 

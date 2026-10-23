@@ -12,10 +12,11 @@
 只使用 Python 3 标准库，零第三方依赖。
 
 说明：
-  * 通用兜底模板 .github/ISSUE_TEMPLATE/上传资料.yml 不由本脚本生成或覆盖。
-  * 专业选项写成「学院·专业」。这是 import_issue.py 支持的写法；仓库里
-    「土木工程」「经济学」「生物技术」「新能源科学与工程」等专业在多个
-    学院重复出现，只写专业名会让脚本无法判定学院。
+  * 通用兜底模板 .github/ISSUE_TEMPLATE/上传资料.yml 不由本脚本生成或覆盖，
+    那里仍用「学院·专业」；学院模板的「开课学院」已固定，专业选项只写
+    纯专业名，import_issue.py 会用「开课学院 + 专业名」定位。
+  * 生成后立即做结构自检：字段顺序、id 集合、选项数量、控件类型、
+    required 等任何一项不符都会报错退出，避免模板字段错位。
   * 每个模板都保留「课程类别」字段，因为 import_issue.py 按 label 解析时
     要求该字段存在；学院模板里固定为「专业课」。
   * 公共课模板的补充框 label 用「课程名」而不是「课程名称（补充）」：
@@ -27,6 +28,7 @@
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -229,7 +231,8 @@ def _public_template(courses):
 
 
 def _college_template(college, majors):
-    options = ["{}·{}".format(college, major) for major in majors]
+    # 学院已由本模板固定，专业下拉只写纯专业名，避免「学院·专业」重复前缀。
+    options = list(majors)
     blocks = [
         _dropdown(
             "category",
@@ -247,7 +250,9 @@ def _college_template(college, majors):
         _dropdown(
             "major",
             "所属专业",
-            "只列出「{}」下的专业；请选择「{}·专业」。".format(college, college),
+            "只列出「{}」下的专业；直接选专业名即可，不用带学院前缀。".format(
+                college
+            ),
             options,
         ),
         _input(
@@ -281,6 +286,284 @@ def _expected_templates():
             college, _majors(college)
         )
     return templates
+
+
+COLLEGE_FIELD_ORDER = [
+    "category",
+    "college",
+    "major",
+    "course",
+    "year",
+    "material_type",
+    "attachments",
+    "confirm",
+]
+PUBLIC_FIELD_ORDER = [
+    "category",
+    "course",
+    "course_manual",
+    "year",
+    "material_type",
+    "attachments",
+    "confirm",
+]
+FIELD_LABELS = {
+    "category": "课程类别",
+    "college": "开课学院",
+    "major": "所属专业",
+    "course": "课程名称",
+    "course_manual": "课程名",
+    "year": "年份学期",
+    "material_type": "资料类型",
+    "attachments": "附件",
+    "confirm": "确认",
+}
+
+
+def _unquote(value):
+    text = value.strip()
+    if text.startswith('"'):
+        try:
+            return json.loads(text)
+        except ValueError:
+            return text
+    return text
+
+
+def _parse_template_fields(content):
+    """解析本脚本生成的 YAML 子集，返回 (fields, problems)。
+
+    不依赖 PyYAML：CI 里只有标准库。只解析 body 下的 type/id/attributes/
+    options/validations 这些固定结构，足以做字段错位自检。
+    """
+    problems = []
+    lines = content.splitlines()
+    try:
+        body_index = lines.index("body:")
+    except ValueError:
+        return [], ["缺少 body: 段"]
+    if lines and lines[0] != AUTO_HEADER:
+        problems.append("缺少自动生成头，可能不是本脚本管理的模板")
+
+    fields = []
+    current = None
+    in_options = False
+    for line in lines[body_index + 1 :]:
+        if not line.strip():
+            continue
+        match = re.match(r"^  - type: (\S+)$", line)
+        if match:
+            current = {
+                "type": match.group(1),
+                "id": "",
+                "label": "",
+                "value": None,
+                "options": [],
+                "option_labels": [],
+                "required": None,
+            }
+            fields.append(current)
+            in_options = False
+            continue
+        if current is None:
+            continue
+        match = re.match(r"^    id: (\S+)$", line)
+        if match:
+            current["id"] = match.group(1)
+            in_options = False
+            continue
+        match = re.match(r"^      label: (.+?)\s*$", line)
+        if match:
+            current["label"] = _unquote(match.group(1))
+            continue
+        match = re.match(r"^      value: (.+?)\s*$", line)
+        if match:
+            current["value"] = _unquote(match.group(1))
+            continue
+        if re.match(r"^      options:\s*$", line):
+            in_options = True
+            continue
+        match = re.match(r"^        - (.+?)\s*$", line)
+        if match and in_options:
+            option = match.group(1)
+            if option.startswith("label: "):
+                current["option_labels"].append(option[len("label: ") :])
+            else:
+                current["options"].append(_unquote(option))
+            continue
+        if re.match(r"^    validations:\s*$", line):
+            in_options = False
+            continue
+        match = re.match(r"^      required: (true|false)\s*$", line)
+        if match:
+            current["required"] = match.group(1) == "true"
+            continue
+
+    for field in fields:
+        if not field["id"]:
+            problems.append("存在没有 id 的字段（type={}）".format(field["type"]))
+    return fields, problems
+
+
+def _validate_template(name, content, college=None, majors=(), public=False):
+    """校验单个模板的字段结构；返回问题列表（空列表表示通过）。"""
+    fields, problems = _parse_template_fields(content)
+    problems = ["{}: {}".format(name, item) for item in problems]
+
+    by_id = {}
+    for field in fields:
+        field_id = field["id"]
+        if field_id in by_id:
+            problems.append("{}: 字段 id 重复：{}".format(name, field_id))
+        else:
+            by_id[field_id] = field
+
+    expected_order = PUBLIC_FIELD_ORDER if public else COLLEGE_FIELD_ORDER
+    actual_order = [field["id"] for field in fields]
+    if actual_order != expected_order:
+        problems.append(
+            "{}: body 字段顺序/数量不正确：{}（应为 {}）".format(
+                name, actual_order, expected_order
+            )
+        )
+    if set(actual_order) != set(expected_order):
+        problems.append(
+            "{}: 字段 id 集合不正确：{}（应为 {}）".format(
+                name, sorted(actual_order), sorted(expected_order)
+            )
+        )
+
+    for field_id, label in FIELD_LABELS.items():
+        field = by_id.get(field_id)
+        if field is None:
+            continue
+        if field["label"] != label:
+            problems.append(
+                "{}: 字段 {} 的 label 为「{}」，应为「{}」".format(
+                    name, field_id, field["label"], label
+                )
+            )
+
+    for field_id, field in by_id.items():
+        if field["required"] is not True and not (
+            public and field_id == "course_manual"
+        ):
+            problems.append("{}: 字段 {} 必须 required: true".format(name, field_id))
+
+    category = by_id.get("category")
+    if category is not None:
+        expected = ["公共课"] if public else ["专业课"]
+        if category["type"] != "dropdown" or category["options"] != expected:
+            problems.append(
+                "{}: 课程类别必须是值为 {} 的 dropdown（实际 type={}，options={}）".format(
+                    name, expected, category["type"], category["options"]
+                )
+            )
+
+    year = by_id.get("year")
+    if year is not None:
+        if year["type"] != "dropdown" or len(year["options"]) != 6:
+            problems.append(
+                "{}: 年份学期必须是 6 项的 dropdown（实际 type={}，{} 项）".format(
+                    name, year["type"], len(year["options"])
+                )
+            )
+
+    material_type = by_id.get("material_type")
+    if material_type is not None:
+        if material_type["type"] != "dropdown" or len(material_type["options"]) != 7:
+            problems.append(
+                "{}: 资料类型必须是 7 项的 dropdown（实际 type={}，{} 项）".format(
+                    name, material_type["type"], len(material_type["options"])
+                )
+            )
+
+    attachments = by_id.get("attachments")
+    if attachments is not None and attachments["type"] != "textarea":
+        problems.append(
+            "{}: 附件必须是 textarea（实际 {}）".format(name, attachments["type"])
+        )
+
+    confirm = by_id.get("confirm")
+    if confirm is not None:
+        if confirm["type"] != "checkboxes":
+            problems.append(
+                "{}: 确认必须是 checkboxes（实际 {}）".format(name, confirm["type"])
+            )
+        if confirm["option_labels"] != [CONFIRM_ITEM]:
+            problems.append(
+                "{}: 确认勾选项不正确：{}".format(name, confirm["option_labels"])
+            )
+
+    if public:
+        course = by_id.get("course")
+        if course is not None:
+            expected_courses = list(majors) + [OTHER_OPTION]
+            if course["type"] != "dropdown" or course["options"] != expected_courses:
+                problems.append(
+                    "{}: 课程名称下拉必须为 {} 门公共课 + 兜底项".format(
+                        name, len(majors)
+                    )
+                )
+        manual = by_id.get("course_manual")
+        if manual is not None and manual["type"] != "input":
+            problems.append("{}: 课程名补充必须是 input".format(name))
+    else:
+        college_field = by_id.get("college")
+        if college_field is None or college_field["type"] != "input":
+            problems.append("{}: 开课学院必须是 input".format(name))
+        elif college_field["value"] != college:
+            problems.append(
+                "{}: 开课学院 value 为「{}」，应为「{}」".format(
+                    name, college_field["value"], college
+                )
+            )
+
+        major = by_id.get("major")
+        if major is None:
+            problems.append("{}: 缺少所属专业字段".format(name))
+        else:
+            options = major["options"]
+            if major["type"] != "dropdown":
+                problems.append("{}: 所属专业必须是 dropdown".format(name))
+            if len(options) != len(majors):
+                problems.append(
+                    "{}: 所属专业选项 {} 项，应为 {} 项".format(
+                        name, len(options), len(majors)
+                    )
+                )
+            if options != list(majors):
+                problems.append("{}: 所属专业选项与真实专业目录不一致".format(name))
+            for option in options:
+                if "·" in option or "/" in option:
+                    problems.append(
+                        "{}: 所属专业选项不应带学院前缀：{}".format(name, option)
+                    )
+
+    return problems
+
+
+def _validate_expected(expected):
+    problems = []
+    for path, content in expected.items():
+        if path.name == PUBLIC_TEMPLATE_NAME:
+            problems.extend(
+                _validate_template(
+                    path.name,
+                    content,
+                    college=None,
+                    majors=_public_courses(),
+                    public=True,
+                )
+            )
+        else:
+            college = path.stem[len(GENERATED_PREFIX) :]
+            problems.extend(
+                _validate_template(
+                    path.name, content, college=college, majors=_majors(college)
+                )
+            )
+    return problems
 
 
 def _existing_generated():
@@ -326,6 +609,14 @@ def _generate():
         "共 {} 个模板（公共课 1 + 学院 {}）".format(len(expected), len(colleges))
     )
 
+    # 写盘前先校验生成内容，避免把错位模板落盘。
+    problems = _validate_expected(expected)
+    if problems:
+        for problem in problems:
+            print("ERROR {}".format(problem))
+        print("FAIL 模板结构自检未通过，已中止写入")
+        return 1
+
     for path, content in expected.items():
         _write_if_changed(path, content)
 
@@ -339,6 +630,26 @@ def _generate():
                 return 1
             print("removed {}".format(path.name))
 
+    # 再读回磁盘校验一次，确认写入结果与自检一致。
+    written = {}
+    for path in expected:
+        try:
+            written[path] = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            print("ERROR 读取已生成模板 {} 失败：{}".format(path.name, exc))
+            return 1
+    problems = _validate_expected(written)
+    if problems:
+        for problem in problems:
+            print("ERROR {}".format(problem))
+        print("FAIL 写盘后的模板结构自检未通过")
+        return 1
+
+    print(
+        "CHECK OK {} 个模板结构自检通过（字段顺序 / id / 选项数 / 控件类型 / required）".format(
+            len(expected)
+        )
+    )
     print("DONE 表单模板已与 courses/ 同步")
     return 0
 
@@ -363,6 +674,9 @@ def _check():
     for path in sorted(actual):
         if path not in expected:
             problems.append("EXTRA {}".format(path.name))
+
+    for problem in _validate_expected(expected):
+        problems.append("STRUCT {}".format(problem))
 
     if problems:
         for problem in problems:

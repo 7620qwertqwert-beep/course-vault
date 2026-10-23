@@ -28,10 +28,10 @@ body:
     id: major
     attributes:
       label: 所属专业
-      description: "只列出「文学院」下的专业；请选择「文学院·专业」。"
+      description: "只列出「文学院」下的专业；直接选专业名即可，不用带学院前缀。"
       options:
-        - "文学院·汉语国际教育"
-        - "文学院·汉语言文学"
+        - "汉语国际教育"
+        - "汉语言文学"
     validations:
       required: true
 

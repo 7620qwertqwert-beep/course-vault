@@ -272,16 +272,46 @@ class ImportIssueTest(unittest.TestCase):
         self.assertIn("找不到专业", out)
         self.assertIn("医学院·康复治疗学", out)
 
-    def test_ambiguous_bare_major_is_rejected(self):
+    def test_ambiguous_bare_major_without_college_is_rejected(self):
         for college in ("商学院", "国际教育学院"):
             (self.courses / "专业课" / college / "经济学").mkdir(
                 parents=True, exist_ok=True
             )
-        body = make_body(major="经济学")
+        # 没有「开课学院」时才需要全局判断；学院模板会先用学院锁定范围。
+        body = make_body(college="_No response_", major="经济学")
         with self.assertRaises(imp.ImportFailure) as ctx:
             imp._parse_form("", body)
         self.assertIn("商学院·经济学", str(ctx.exception))
         self.assertIn("国际教育学院·经济学", str(ctx.exception))
+
+    def test_bare_major_is_scoped_by_college_even_if_duplicated_elsewhere(self):
+        for college in ("商学院", "国际教育学院"):
+            (self.courses / "专业课" / college / "经济学").mkdir(
+                parents=True, exist_ok=True
+            )
+        body = make_body(college="商学院", major="经济学")
+        form = imp._parse_form("", body)
+        self.assertEqual(form["college"], "商学院")
+        self.assertEqual(form["major"], "经济学")
+
+    def test_bare_major_wrong_college_fails_with_scoped_suggestion(self):
+        (self.courses / "专业课" / "文学院" / "汉语言文学").mkdir(
+            parents=True, exist_ok=True
+        )
+        self.write_body(make_body(college="文学院", major="康复治疗学"))
+        code, out, _ = self.run_main("--dry-run")
+        self.assertEqual(code, 2)
+        self.assertIn("在学院「文学院」下找不到专业「康复治疗学」", out)
+        self.assertIn("文学院·", out)
+
+    def test_prefixed_major_conflicting_with_college_fails(self):
+        (self.courses / "专业课" / "文学院" / "汉语言文学").mkdir(
+            parents=True, exist_ok=True
+        )
+        self.write_body(make_body(college="文学院", major="医学院·康复治疗学"))
+        code, out, _ = self.run_main("--dry-run")
+        self.assertEqual(code, 2)
+        self.assertIn("开课学院与所属专业不一致", out)
 
     def test_illegal_course_components_are_rejected(self):
         for name in ("a/b", "..", "a\x00b", "a\\b", " a", "a ", ".", "a:b"):

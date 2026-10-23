@@ -28,10 +28,10 @@ body:
     id: major
     attributes:
       label: 所属专业
-      description: "只列出「教师教育学院」下的专业；请选择「教师教育学院·专业」。"
+      description: "只列出「教师教育学院」下的专业；直接选专业名即可，不用带学院前缀。"
       options:
-        - "教师教育学院·小学教育"
-        - "教师教育学院·科学教育"
+        - "小学教育"
+        - "科学教育"
     validations:
       required: true
 

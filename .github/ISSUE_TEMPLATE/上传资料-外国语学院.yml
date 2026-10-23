@@ -28,11 +28,11 @@ body:
     id: major
     attributes:
       label: 所属专业
-      description: "只列出「外国语学院」下的专业；请选择「外国语学院·专业」。"
+      description: "只列出「外国语学院」下的专业；直接选专业名即可，不用带学院前缀。"
       options:
-        - "外国语学院·日语"
-        - "外国语学院·翻译"
-        - "外国语学院·英语"
+        - "日语"
+        - "翻译"
+        - "英语"
     validations:
       required: true
 

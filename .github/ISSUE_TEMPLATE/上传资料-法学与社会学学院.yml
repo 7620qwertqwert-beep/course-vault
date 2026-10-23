@@ -28,10 +28,10 @@ body:
     id: major
     attributes:
       label: 所属专业
-      description: "只列出「法学与社会学学院」下的专业；请选择「法学与社会学学院·专业」。"
+      description: "只列出「法学与社会学学院」下的专业；直接选专业名即可，不用带学院前缀。"
       options:
-        - "法学与社会学学院·法学"
-        - "法学与社会学学院·社会工作"
+        - "法学"
+        - "社会工作"
     validations:
       required: true
 
