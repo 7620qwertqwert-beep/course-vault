@@ -200,6 +200,29 @@ class ImportIssueTest(unittest.TestCase):
             self.assertIn(label, imp._parse_sections(make_body()))
         self.assertIn(imp.CONFIRM_REQUIREMENT, form_text)
 
+    def test_generated_form_labels_are_parser_known(self):
+        """生成的按学院模板里，每个顶层 label 都必须是解析器已知的分节标签。
+
+        未知 label（例如「课程名称（补充）」）不会成为分节边界，会被并进
+        上一段，导致该段出现多行内容而解析失败。
+        """
+        templates = sorted(
+            (REPO_ROOT / ".github" / "ISSUE_TEMPLATE").glob("上传资料-*.yml")
+        )
+        self.assertTrue(templates, "没有找到 scripts/gen_forms.py 生成的模板")
+        for path in templates:
+            text = path.read_text(encoding="utf-8")
+            labels = re.findall(r"(?m)^ {6}label:\s*(.+?)\s*$", text)
+            self.assertTrue(labels, "{} 没有任何字段 label".format(path.name))
+            for label in labels:
+                self.assertIn(
+                    label,
+                    imp.KNOWN_SECTION_LABELS,
+                    "{} 的字段 label「{}」不是 import_issue.py 的已知分节标签".format(
+                        path.name, label
+                    ),
+                )
+
     def test_form_dropdown_option_counts(self):
         form_text = (
             REPO_ROOT / ".github" / "ISSUE_TEMPLATE" / "上传资料.yml"
