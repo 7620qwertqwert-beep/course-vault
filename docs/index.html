@@ -29,12 +29,14 @@
   select{width:100%;padding:12px;font-size:16px;color:var(--ink);
       border:1px solid var(--line);border-radius:12px;background:#fff;-webkit-appearance:none}
   .grp{font-size:13px;color:var(--muted);margin:18px 2px 6px}
-  .item{display:block;padding:12px 13px;margin:8px 0;border:1px solid var(--line);
+  .item{display:flex;align-items:center;gap:10px;padding:10px 13px;margin:8px 0;border:1px solid var(--line);
       border-radius:12px;background:#fff;text-decoration:none;color:inherit}
   .item:active{background:#fff5f8}
+  .item .body{flex:1;min-width:0}
   .item .n{font-weight:600;word-break:break-all}
   .item .m{font-size:12.5px;color:var(--muted);margin-top:3px}
-  .item .act{float:right;color:var(--pink);font-size:13px;margin-left:10px}
+  .item .act{flex:0 0 auto;color:var(--pink);font-size:13px;margin-left:8px}
+  .thumb{width:54px;height:54px;flex:0 0 auto;object-fit:cover;border-radius:8px;background:#f4f4f4}
   .empty{color:var(--muted);text-align:center;padding:26px 8px;font-size:14px}
   .empty a{color:var(--pink)}
   .crumb{font-size:12.5px;color:var(--muted);margin:12px 2px 4px}
@@ -111,6 +113,22 @@
   function encPath(p) { return p.split("/").map(encodeURIComponent).join("/"); }
   // 下载走本站静态目录（/courses/...）。Gitee raw 有防盗链：带 Referer 过去会 403。
   function rawUrl(c, f) { return "/" + encPath(c.p + "/" + f.t + "/" + f.n); }
+  var IMG_RE = /\.(jpe?g|png|webp)$/i;
+  function thumbUrl(c, f) {
+    var rel = (c.p + "/" + f.t + "/" + f.n).replace(/\.[^.]+$/, ".jpg");
+    return "/_thumb/" + encPath(rel);
+  }
+  // 统一生成一条资料条目：图片带 54px 缩略图（不占多少版面，也不进仓库）
+  function fileItem(c, f, key, prefix) {
+    var img = IMG_RE.test(f.n)
+      ? '<img class="thumb" loading="lazy" alt="" src="' + thumbUrl(c, f) + '">'
+      : "";
+    var meta = (prefix ? prefix + " › " : "") + f.t + " · " + sizeText(f.s);
+    return '<a class="item" href="' + rawUrl(c, f) + '" target="_blank" rel="noopener">' + img +
+      '<div class="body"><div class="n">' + mark(f.n, key) + '</div>' +
+      '<div class="m">' + esc(meta) + '</div></div>' +
+      '<span class="act">打开</span></a>';
+  }
   function courseUrl(c) { return "#/c/" + encodeURIComponent(c.p); }
   function giteeDirUrl(c) { return REPO + "/tree/main/" + encPath(c.p); }
   function sizeText(n) {
@@ -245,11 +263,7 @@
     if (files.length) {
       html += '<div class="grp">资料（' + files.length + '）</div>';
       files.slice(0, 60).forEach(function (it) {
-        html += '<a class="item" href="' + rawUrl(it.c, it.f) + '" target="_blank" rel="noopener">' +
-          '<span class="act">下载</span>' +
-          '<div class="n">' + mark(it.f.n, key) + '</div>' +
-          '<div class="m">' + esc(pathText(it.c) + " › " + it.c.n + " › " + it.f.t) +
-          ' · ' + sizeText(it.f.s) + '</div></a>';
+        html += fileItem(it.c, it.f, key, pathText(it.c) + " › " + it.c.n);
       });
     }
     if (!courses.length && !files.length) {
@@ -323,10 +337,7 @@
         if (!arr) return;
         html += '<div class="grp">' + t + '（' + arr.length + '）</div>';
         arr.forEach(function (f) {
-          html += '<a class="item" href="' + rawUrl(c, f) + '" target="_blank" rel="noopener">' +
-            '<span class="act">下载</span>' +
-            '<div class="n">' + mark(f.n, key) + '</div>' +
-            '<div class="m">' + t + ' · ' + sizeText(f.s) + '</div></a>';
+          html += fileItem(c, f, key);
         });
       });
       if (!key && !state.type && total) {
