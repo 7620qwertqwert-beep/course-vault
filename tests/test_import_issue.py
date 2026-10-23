@@ -915,6 +915,53 @@ class ImportIssueTest(unittest.TestCase):
         self.assertEqual(second.read_bytes(), b"%PDF-1.4\nsecond\n")
         self.assertEqual(first.read_bytes(), b"%PDF-1.4\nfirst\n", "旧文件被覆盖了")
 
+    def test_identical_content_is_skipped_as_duplicate(self):
+        target = self.course / "笔记"
+        source = self.make_source("我的笔记.pdf", b"%PDF-1.4\nsame content\n")
+
+        code, out, err = self.run_main("--attachment-file", str(source))
+        self.assertEqual(code, 0, out + err)
+        first = target / "2025秋-笔记-康复医学概论.pdf"
+        self.assertTrue(first.is_file())
+        self.assertNotIn("SKIP_DUP", out)
+
+        code, out, err = self.run_main("--attachment-file", str(source))
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("SKIP_DUP {}".format(first.name), out)
+        self.assertIn("IMPORT_OK", out)
+        self.assertIn(" 0", out)
+        self.assertEqual(
+            sorted(path.name for path in target.iterdir() if path.is_file()),
+            [first.name],
+            "同内容附件不应生成 -2 副本",
+        )
+
+    def test_duplicate_content_within_one_batch_is_skipped(self):
+        target = self.course / "笔记"
+        first_source = self.make_source("a.pdf", b"%PDF-1.4\nsame batch\n")
+        second_source = self.make_source("b.pdf", b"%PDF-1.4\nsame batch\n")
+        self.write_body(
+            make_body(
+                attachments=(
+                    "[a.pdf](https://github.com/user-attachments/assets/aaaa)\n\n"
+                    "[b.pdf](https://github.com/user-attachments/assets/bbbb)"
+                )
+            )
+        )
+
+        code, out, err = self.run_main(
+            "--attachment-file",
+            str(first_source),
+            "--attachment-file",
+            str(second_source),
+        )
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("SKIP_DUP 2025秋-笔记-康复医学概论.pdf", out)
+        self.assertIn("IMPORT_OK", out)
+        self.assertIn(" 1", out)
+        saved = sorted(path.name for path in target.iterdir() if path.is_file())
+        self.assertEqual(saved, ["2025秋-笔记-康复医学概论.pdf"])
+
     def test_without_flag_still_uses_network_download_path(self):
         # 不传 --attachment-file 时必须走 _download_one，而不是本地冒充。
         with mock.patch.object(
@@ -963,8 +1010,34 @@ class ImportIssueTest(unittest.TestCase):
                 str(second),
             )
         self.assertEqual(code, 2)
-        self.assertIn("超过单个 PR", out)
+        self.assertIn("合计", out)
+        self.assertIn("100MB", out)
         self.assertEqual(list((self.course / "笔记").iterdir()), [])
+
+    def test_total_size_aborts_before_remaining_attachments(self):
+        first = self.make_source("a.pdf", b"1234")
+        second = self.make_source("b.pdf", b"5678")
+        self.write_body(
+            make_body(
+                attachments=(
+                    "[a.pdf](https://github.com/user-attachments/assets/aaaa)\n\n"
+                    "[b.pdf](https://github.com/user-attachments/assets/bbbb)"
+                )
+            )
+        )
+        with mock.patch.object(imp, "MAX_TOTAL_BYTES", 3):
+            with mock.patch.object(
+                imp, "_copy_test_file", wraps=imp._copy_test_file
+            ) as copy_file:
+                code, out, _ = self.run_main(
+                    "--attachment-file",
+                    str(first),
+                    "--attachment-file",
+                    str(second),
+                )
+        self.assertEqual(code, 2)
+        self.assertIn("合计", out)
+        self.assertEqual(copy_file.call_count, 1, "超过总量后不应继续下载后面的附件")
 
     # ---------- 下载安全 ----------
 
@@ -980,13 +1053,34 @@ class ImportIssueTest(unittest.TestCase):
             imp._looks_like_error_document(b"%PDF-1.4\nreal pdf\n", "application/pdf")
         )
 
+    def test_markdown_notes_are_never_rejected_by_html_heuristic(self):
+        note = b"# HTML \xe8\xae\xb2\xe4\xb9\x89\n\n<html><title>demo</title></html>"
+        for content_type in (
+            "text/html; charset=utf-8",
+            "application/octet-stream",
+            "text/plain",
+        ):
+            for ext in ("md", "txt"):
+                with self.subTest(content_type=content_type, ext=ext):
+                    self.assertFalse(
+                        imp._looks_like_error_document(note, content_type, ext)
+                    )
+        # 同样的内容换成 pdf 扩展名，仍然要按错误页拒绝。
+        self.assertTrue(imp._looks_like_error_document(note, "text/html", "pdf"))
+        self.assertTrue(
+            imp._looks_like_error_document(note, "application/octet-stream", "pdf")
+        )
+
     def test_download_404_and_html_are_friendly_failures(self):
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
                 if self.path.startswith("/404"):
                     self.send_error(404)
                     return
-                body = b"<!DOCTYPE html><html><body>error</body></html>"
+                if self.path.startswith("/note.md"):
+                    body = b"# HTML\n\n<html><title>demo</title></html>"
+                else:
+                    body = b"<!DOCTYPE html><html><body>error</body></html>"
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Content-Length", str(len(body)))
@@ -1028,6 +1122,24 @@ class ImportIssueTest(unittest.TestCase):
                         )
                     self.assertIn("HTTP 404", str(ctx.exception))
                 self.assertEqual(list(temp_dir.iterdir()), [])
+
+                # text/html 里的 <html>/<title> 不能误伤 .md 笔记。
+                with mock.patch.object(
+                    imp, "_is_official_attachment", return_value=True
+                ):
+                    note = imp._download_one(
+                        {
+                            "url": "http://127.0.0.1:{}/note.md".format(port),
+                            "label": "note.md",
+                        },
+                        3,
+                        temp_dir,
+                    )
+                self.assertEqual(note["ext"], "md")
+                self.assertEqual(
+                    note["tmp"].read_bytes(),
+                    b"# HTML\n\n<html><title>demo</title></html>",
+                )
             finally:
                 import shutil
 

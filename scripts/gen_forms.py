@@ -777,6 +777,18 @@ def _generic_problems():
             "{}: 课程类别下拉应为「公共课 / 专业课」".format(GENERIC_TEMPLATE_NAME)
         )
 
+    year = by_id.get("year")
+    if (
+        year is None
+        or year["type"] != "input"
+        or year.get("description") != YEAR_DESCRIPTION
+    ):
+        problems.append(
+            "{}: 年份学期必须是 input，且 description 与学院模板一致".format(
+                GENERIC_TEMPLATE_NAME
+            )
+        )
+
     college = by_id.get("college")
     if (
         college is None

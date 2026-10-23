@@ -11,6 +11,8 @@
   * 课程目录必须已经存在，课程名必须与目录名完全一致；
   * 所有目标路径都必须落在 courses/ 内，拒绝 ..、斜杠等路径逃逸；
   * 附件数量 1~5 个，单个不超过 50MB（zip 不超过 20MB），合计不超过 100MB；
+    合计大小在下载过程中累计，超过上限立即中止；
+  * 目标目录里已有内容相同的文件时跳过该附件，不生成 -2/-3 副本；
   * 扩展名只允许 pdf/doc/docx/ppt/pptx/xls/xlsx/md/txt/jpg/jpeg/png/zip。
 
 学院、专业既可以下拉选择，也可以在「学院名称」「专业名称」补充框里手写；
@@ -40,6 +42,7 @@
 
 import argparse
 import difflib
+import hashlib
 import json
 import os
 import re
@@ -66,6 +69,10 @@ ALLOWED_EXTENSIONS = {
     "pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx",
     "md", "txt", "jpg", "jpeg", "png", "zip",
 }
+
+# 讲解 HTML 的 .md/.txt 笔记正文里可能出现 <html> / <title>；
+# 这两类文件永不因“页面内容像 HTML 错误页”而被拒。
+NOTE_TEXT_EXTENSIONS = {"md", "txt"}
 
 # 表单里的「资料类型」→ 仓库里的资料子目录。
 TYPE_TO_DIR = {
@@ -1095,6 +1102,52 @@ def _human_size(num):
     return "{}B".format(num)
 
 
+def _sha256_file(path):
+    """计算文件内容的 sha256，用于识别目标目录里的同内容文件。"""
+    digest = hashlib.sha256()
+    with open(str(path), "rb") as handle:
+        while True:
+            chunk = handle.read(1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _target_files_by_size(target_dir):
+    """只扫描本次目标目录，按大小分组，避免对每个附件都全目录重算哈希。"""
+    by_size = {}
+    try:
+        entries = sorted(target_dir.iterdir())
+    except OSError as exc:
+        _fail("读取目标目录失败：{}".format(exc))
+    for path in entries:
+        # 不跟随符号链接，也不把子目录当成已有资料。
+        if path.is_symlink() or not path.is_file():
+            continue
+        try:
+            size = path.stat().st_size
+        except OSError:
+            continue
+        by_size.setdefault(size, []).append(path)
+    return by_size
+
+
+def _find_duplicate(by_size, size, digest, planned, digest_cache):
+    """返回目标目录（或本批已计划落盘）中同内容文件的文件名；没有则 None。"""
+    if digest in planned:
+        return planned[digest]
+    for path in by_size.get(size, ()):
+        if path not in digest_cache:
+            try:
+                digest_cache[path] = _sha256_file(path)
+            except OSError:
+                digest_cache[path] = None
+        if digest_cache[path] == digest:
+            return path.name
+    return None
+
+
 def _http_error_detail(exc):
     try:
         raw = exc.read(64 * 1024).decode("utf-8", "replace")
@@ -1107,9 +1160,19 @@ def _http_error_detail(exc):
     return ""
 
 
-def _looks_like_error_document(sample, content_type):
-    """识别 HTML/JSON/XML 错误页，避免把 200 的错误页当成资料存进来。"""
+def _looks_like_error_document(sample, content_type, ext=None):
+    """识别 HTML/JSON/XML 错误页，避免把 200 的错误页当成资料存进来。
+
+    正文启发式只在响应确实不是文本笔记时启用：
+    * `.md` / `.txt` 永不因这个判据被拒（讲 HTML 的笔记本身就可能带标签）；
+    * 明确的 HTML/JSON/XML 类型仍然拒绝；
+    * `application/octet-stream`（以及服务器没给 Content-Type 的情况）
+      才去扫前 2KB，看是否像 HTML 错误页。
+    """
     mime = (content_type or "").split(";", 1)[0].strip().lower()
+    extension = (ext or "").lower()
+    if extension in NOTE_TEXT_EXTENSIONS:
+        return False
     if mime in (
         "text/html",
         "application/xhtml+xml",
@@ -1119,6 +1182,8 @@ def _looks_like_error_document(sample, content_type):
         "text/xml",
     ):
         return True
+    if mime not in ("", "application/octet-stream"):
+        return False
 
     head = sample[:2048].decode("utf-8", "ignore").lstrip("\ufeff \t\r\n").lower()
     if head.startswith(("<!doctype html", "<html", "<head", "<body")):
@@ -1187,11 +1252,6 @@ def _download_one(item, index, temp_dir):
 
             content_disposition = response.headers.get("Content-Disposition")
             content_type = response.headers.get("Content-Type")
-            if _looks_like_error_document(b"", content_type):
-                _fail(
-                    "附件 #{} 返回的是 HTML/JSON/XML 错误页，"
-                    "不是资料文件，已拒绝入库。".format(index)
-                )
             header_filename = _filename_from_content_disposition(content_disposition)
             ext = _choose_extension(label_ext, header_filename, content_type, url_ext)
             if not ext:
@@ -1200,6 +1260,12 @@ def _download_one(item, index, temp_dir):
                     "服务器也没有返回可识别的文件类型。请改用带文件名的附件链接。".format(
                         index
                     )
+                )
+            # 扩展名确定后再做错误页判定：.md/.txt 笔记不会被 HTML 启发式误伤。
+            if _looks_like_error_document(b"", content_type, ext):
+                _fail(
+                    "附件 #{} 返回的是 HTML/JSON/XML 错误页，"
+                    "不是资料文件，已拒绝入库。".format(index)
                 )
 
             header_ext = _ext_from_name(header_filename) if header_filename else None
@@ -1233,7 +1299,7 @@ def _download_one(item, index, temp_dir):
             sample = response.read(64 * 1024)
             if not sample:
                 _fail("附件 #{} 是空文件，已拒绝入库。".format(index))
-            if _looks_like_error_document(sample, content_type):
+            if _looks_like_error_document(sample, content_type, ext):
                 _fail(
                     "附件 #{} 返回的是 HTML/JSON/XML 错误页，"
                     "不是资料文件，已拒绝入库。".format(index)
@@ -1557,6 +1623,7 @@ def _run(args):
     temp_dir = Path(tempfile.mkdtemp(prefix="course-vault-import-"))
     downloaded = []
     moved = []
+    total_size = 0
     try:
         for index, item in enumerate(form["attachments"], 1):
             if test_files:
@@ -1572,18 +1639,48 @@ def _run(args):
                 print("正在下载附件 {}/{} ...".format(index, len(form["attachments"])))
                 downloaded.append(_download_one(item, index, temp_dir))
 
-        total_size = sum(item["size"] for item in downloaded)
-        if total_size > MAX_TOTAL_BYTES:
-            _fail(
-                "本次附件总大小为 {}，超过单个 PR 的 100MB 上限；"
-                "请分多次提交或改用网盘链接。".format(_human_size(total_size))
-            )
+            # 边下边算：一旦累计超过 100MB 立即中止，不再继续下载后面的附件。
+            total_size += downloaded[-1]["size"]
+            if total_size > MAX_TOTAL_BYTES:
+                _fail(
+                    "本次附件合计超过 100MB 上限（当前累计 {}）；"
+                    "请分多次提交或改用网盘链接。".format(_human_size(total_size))
+                )
 
+        # 落盘前先按内容 sha256 去重：只检查本次目标目录，不遍历整个 courses/。
+        by_size = _target_files_by_size(target_dir)
+        digest_cache = {}
+        planned_digests = {}
         reserved = set()
         moves = []
         for item in downloaded:
+            try:
+                digest = _sha256_file(item["tmp"])
+            except OSError as exc:
+                _fail("读取下载内容失败：{}".format(exc))
+            duplicate = _find_duplicate(
+                by_size,
+                item["size"],
+                digest,
+                planned_digests,
+                digest_cache,
+            )
+            if duplicate is not None:
+                print("SKIP_DUP {}".format(duplicate))
+                print(
+                    "附件 {} 内容与已有文件相同，已跳过。".format(item["index"])
+                )
+                continue
             name = _allocate_filename(target_dir, base, item["ext"], reserved)
             moves.append((item, target_dir / name))
+            planned_digests[digest] = name
+
+        if not moves:
+            # 全部附件都重复：保持和 workflow 的 changed=false 分支兼容。
+            print("没有检测到需要归档的新文件（附件内容均与已有文件相同）。")
+            _print_meta(form)
+            print("IMPORT_OK {} 0".format(target_rel))
+            return 0
 
         # 全部下载并校验通过后才动 courses/；中途失败会回滚已移动的文件。
         for item, destination in moves:

@@ -149,18 +149,12 @@ body:
     validations:
       required: true
 
-  - type: dropdown
+  - type: input
     id: year
     attributes:
       label: 年份学期
-      description: 这份资料是哪一学年、哪个学期用的；选「其他」时请在附件框写清 20xx春 / 20xx秋。
-      options:
-        - 2024秋
-        - 2025春
-        - 2025秋
-        - 2026春
-        - 2026秋
-        - 其他
+      description: "填成 20xx + 春/秋，例如 2023春、2025秋、2026秋。填你实际上课的那个学期。"
+      placeholder: "2025秋"
     validations:
       required: true
 
