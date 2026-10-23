@@ -73,7 +73,12 @@
     </select>
   </div>
   <div class="row">
-    <label>⑥ 文件（最多 5 个，单个不超过 50MB）</label>
+    <label for="title">⑥ 标题（可选）</label>
+    <input type="text" id="title" placeholder="如：第一章绪论 / 期中试卷 / 骨骼标本观察" autocomplete="off">
+    <div class="hint">只写这份资料叫什么；文件会命名为「年份-标题」，例如 2025秋-第一章绪论.pdf</div>
+  </div>
+  <div class="row">
+    <label>⑦ 文件（最多 5 个，单个不超过 50MB）</label>
     <div class="drop" id="drop">
       点这里选文件，或把文件<b>拖到这里</b><br>
       <span style="font-size:12px">pdf / doc / ppt / xls / md / txt / jpg / png / zip</span>
@@ -179,6 +184,7 @@ $('go').onclick = () => {
   fd.append('course', course);
   fd.append('year', year);
   fd.append('type', type);
+  fd.append('title', $('title').value.trim());
   picked.forEach(f => fd.append('files', f));
 
   const xhr = new XMLHttpRequest();
