@@ -207,6 +207,18 @@ jobs:
             echo "::warning::发现 $dup 组内容完全相同的文件，可能重复上传，请人工确认"
           fi
 
+      # ---------- 5.5 站点数据与单元测试 ----------
+      - name: 站点数据一致性（courses.json）
+        shell: bash
+        run: |
+          set -eu
+          python3 scripts/gen_site_data.py --check
+      - name: 单元测试
+        shell: bash
+        run: |
+          set -eu
+          python3 -m unittest discover -s tests
+
       # ---------- 6. 汇总 ----------
       - name: 检查完成
         if: success()
