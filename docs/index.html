@@ -113,6 +113,8 @@
   function encPath(p) { return p.split("/").map(encodeURIComponent).join("/"); }
   // 下载走本站静态目录（/courses/...）。Gitee raw 有防盗链：带 Referer 过去会 403。
   function rawUrl(c, f) { return "/" + encPath(c.p + "/" + f.t + "/" + f.n); }
+  // 站内查看页：md/pdf/图片都在页面里直接打开，另有「下载原件」
+  function viewUrl(c, f) { return "view.html?p=" + encodeURIComponent(c.p + "/" + f.t + "/" + f.n); }
   var IMG_RE = /\.(jpe?g|png|webp)$/i;
   function thumbUrl(c, f) {
     var rel = (c.p + "/" + f.t + "/" + f.n).replace(/\.[^.]+$/, ".jpg");
@@ -124,7 +126,7 @@
       ? '<img class="thumb" loading="lazy" alt="" src="' + thumbUrl(c, f) + '">'
       : "";
     var meta = (prefix ? prefix + " › " : "") + f.t + " · " + sizeText(f.s);
-    return '<a class="item" href="' + rawUrl(c, f) + '" target="_blank" rel="noopener">' + img +
+    return '<a class="item" href="' + viewUrl(c, f) + '" target="_blank" rel="noopener">' + img +
       '<div class="body"><div class="n">' + mark(f.n, key) + '</div>' +
       '<div class="m">' + esc(meta) + '</div></div>' +
       '<span class="act">打开</span></a>';
