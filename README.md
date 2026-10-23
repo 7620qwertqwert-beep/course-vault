@@ -12,7 +12,7 @@
 | 我想…… | 三步走 |
 |---|---|
 | **找资料** | ① 打开 [INDEX.md](INDEX.md) → ② 按学院或课名搜索 → ③ 点进课程文件夹下载。 |
-| **传资料** | ① 打开 [国内镜像 → Issues → 新建 Issue](https://gitee.com/youliboshi/course-vault/issues/new)→ ② 选「上传资料」模板，按提示填课程、专业、学期、类型，把文件拖进去 → ③ 提交；维护者确认后归档。 |
+| **传资料** | ① 打开 [Issues → 新建 Issue](https://gitee.com/youliboshi/course-vault/issues/new)→ ② 选「上传资料」模板，按提示填课程、专业、学期、类型，把文件拖进去 → ③ 提交；维护者确认后归档。 |
 | **有问题** | 到 [Issues](https://gitee.com/youliboshi/course-vault/issues) 提问，或直接把问题/文件发给维护者。 |
 
 目录已建好，资料靠大家补，卡片里“待补充”的字段欢迎填。
