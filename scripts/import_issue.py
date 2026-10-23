@@ -14,13 +14,15 @@
   * 扩展名只允许 pdf/doc/docx/ppt/pptx/xls/xlsx/md/txt/jpg/jpeg/png/zip。
 
 学院、专业既可以下拉选择，也可以在「学院名称」「专业名称」补充框里手写；
-手写值优先于下拉值，支持末尾括号说明。专业模板的学院/专业输入框已预填
-纯名（专业名不带学院前缀）：脚本先用「开课学院」定位学院，再在该学院下
-找专业；通用模板仍支持「学院·专业」「学院/专业」。课程名来自下拉时是
-纯课程名，脚本用「学院 + 专业」把它定位到 学院/专业/课程 四层目录。
-找不到课程时用 difflib 给出该专业下最接近的 1~3 个候选，并提示改对后重试；
-旧格式（「学院·专业」、只写专业名、末尾带括号说明）仍然兼容。公共课旧模板
-的「课程名」是下拉兜底项的补充框：下拉选「其他（在下面写）」或为空时使用
+手写值优先于下拉值，支持末尾括号说明。学院模板的「开课学院」已预填，
+「所属专业」从本学院专业下拉里选：脚本先用「开课学院」定位学院，再在该
+学院下找专业；通用模板仍支持「学院·专业」「学院/专业」。
+学院模板的「课程名称」下拉写成「专业 · 课程名」：脚本会拆出课程名，并
+校验前缀专业与所选专业一致；不一致直接报错（不按前缀悄悄改专业），安全
+第一。分隔符支持「·」「/」「-」（含常见全角写法）。纯课程名（旧 Issue、
+通用模板）仍按「学院 + 专业」定位。找不到课程时用 difflib 给出本学院内
+最接近的 1~3 个候选，并带上专业名，提示改对后重试。公共课旧模板的
+「课程名」是下拉兜底项的补充框：下拉选「其他（在下面写）」或为空时使用
 它，下拉已是具体课程时以缓存的下拉值为准，避免切换选项后残留的补充文本
 覆盖正确课程。容错只影响“找哪个真实目录”，不会放宽上面的安全检查。
 
@@ -91,6 +93,10 @@ TYPE_TO_FILENAME = {
 
 # 下拉框里代表“列表没有，去下面的补充框手写”的选项。
 OTHER_OPTION = "其他（在下面写）"
+
+# 学院模板的课程选项写成「专业 · 课程名」；用户手改时可能用 / 或 -。
+# 只在前缀确实等于本学院某个专业时才拆，避免误伤课名里本来就有 - 的情况。
+COURSE_SEPARATOR_RE = re.compile(r"\s*[·/／\-－–—]\s*")
 
 FIELD_ALIASES = {
     "category": ("课程类别", "类别"),
@@ -442,6 +448,15 @@ def _major_names(college):
     return _iter_subdirs(COURSES_DIR / "专业课" / college)
 
 
+def _college_course_pairs(college):
+    """返回本学院全部 (专业, 课程)，先按专业再按课程名排序。"""
+    return [
+        (major, course)
+        for major in _major_names(college)
+        for course in _iter_subdirs(COURSES_DIR / "专业课" / college / major)
+    ]
+
+
 def _all_major_pairs():
     return [
         (college, major)
@@ -505,6 +520,48 @@ def _strip_trailing_parenthetical(text):
         text = re.sub(r"\s*[（(][^（）()]*[）)]\s*$", "", text)
         text = _normalize_spaces(text)
     return text
+
+
+def _resolve_course_value(raw, college, major):
+    """把「专业 · 课程名」拆成纯课程名，并校验专业前缀。
+
+    * 只有在分隔符左侧确实是本学院的专业名时才拆；课名里自带的 `-`
+      不会被误当成专业前缀。
+    * 前缀专业与所选专业不一致时直接报错，不按前缀悄悄改专业。
+    * 不含专业前缀的旧值（纯课程名）原样返回，继续按「学院 + 专业」定位。
+    """
+    text = _single_line(raw, "课程名称")
+    # 先按旧格式处理：如果整个值就是本专业下真实存在的课程名，直接返回。
+    # 这样课名里本来就带「-」或「·」时，不会被误当成专业前缀拆开。
+    existing = _iter_subdirs(COURSES_DIR / "专业课" / college / major)
+    if text in existing:
+        return _validate_component(text, "课程名称")
+
+    majors = _major_names(college)
+    all_majors = {name for _college, name in _all_major_pairs()}
+    for match in COURSE_SEPARATOR_RE.finditer(text):
+        prefix = _normalize_spaces(text[: match.start()])
+        suffix = _normalize_spaces(text[match.end() :])
+        if not prefix or not suffix:
+            continue
+        candidate = prefix
+        if candidate not in majors:
+            stripped = _strip_trailing_parenthetical(candidate)
+            if stripped in majors:
+                candidate = stripped
+            elif stripped in all_majors:
+                # 前缀是别的学院的专业：同样按不一致处理，避免把课程
+                # 稀里糊涂定位到另一个学院。
+                candidate = stripped
+            elif candidate not in all_majors:
+                continue
+        if candidate != major:
+            _fail(
+                "课程『{}』属于专业『{}』，与所选专业『{}』不一致，"
+                "请重新选。".format(suffix, candidate, major)
+            )
+        return _validate_component(suffix, "课程名称")
+    return _validate_component(text, "课程名称")
 
 
 def _resolve_college(value, label="开课学院"):
@@ -787,9 +844,14 @@ def _parse_form(title, body):
             )
     else:
         course_value = _required_section(sections, "course", "课程名称")
-    course = _validate_component(
-        _single_line(course_value, "课程名称"), "课程名称"
-    )
+
+    # 公共课没有「专业 · 课程」前缀，直接校验课程名。专业课要等学院/专业
+    # 解析完成后再拆前缀并做一致性校验。
+    course = ""
+    if category == "公共课":
+        course = _validate_component(
+            _single_line(course_value, "课程名称"), "课程名称"
+        )
 
     year = _year_term(_required_section(sections, "year", "年份学期"), body)
     material_type = _single_line(
@@ -859,6 +921,9 @@ def _parse_form(title, body):
             college = major_college
             college_source = "derived"
 
+        # 课程下拉值形如「专业 · 课程名」；拆出课程名并校验专业前缀。
+        course = _resolve_course_value(course_value, college, major)
+
     attachments_text = _required_section(sections, "attachments", "附件")
     all_links = _parse_attachments(attachments_text)
     official = [item for item in all_links if _is_official_attachment(item["url"])]
@@ -913,12 +978,29 @@ def _target_directory(form):
         if form["category"] == "公共课":
             available = _iter_subdirs(COURSES_DIR / "公共课")
             scope = "公共课"
+            suggestions = _closest(form["course"], available)
         else:
-            available = _iter_subdirs(
-                COURSES_DIR / "专业课" / form["college"] / form["major"]
+            # 学院模板的课程下拉覆盖本学院所有专业，所以候选也列全学院，
+            # 并带上专业前缀，方便用户判断是不是「专业选错了」。
+            pairs = _college_course_pairs(form["college"])
+            suggestions = _closest(
+                form["course"], [course for _major, course in pairs]
             )
+            suggestion_items = []
+            for name in suggestions:
+                majors_for_course = [
+                    major for major, course in pairs if course == name
+                ]
+                shown_major = (
+                    form["major"]
+                    if form["major"] in majors_for_course
+                    else majors_for_course[0]
+                )
+                suggestion_items.append(
+                    "{} · {}".format(shown_major, name)
+                )
+            suggestions = suggestion_items
             scope = "{}·{}".format(form["college"], form["major"])
-        suggestions = _closest(form["course"], available)
         if suggestions:
             _fail(
                 "课程目录不存在：{}。你是不是想写：{} ？"
