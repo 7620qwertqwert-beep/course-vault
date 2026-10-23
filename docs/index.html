@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>信师大南湖课栈 · 找课 / 传资料</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2064%2064'%3E%3Crect%20width='64'%20height='64'%20rx='14'%20fill='%23e26d97'/%3E%3Cpath%20d='M16%2018h13a7%207%200%200%201%207%207v23a7%207%200%200%200-7-7H16z'%20fill='%23fff'/%3E%3Cpath%20d='M48%2018H35a7%207%200%200%200-7%207v23a7%207%200%200%201%207-7h13z'%20fill='%23fff'%20opacity='.85'/%3E%3C/svg%3E">
 <style>
   :root{
     --pink:#e26d97; --pink-soft:#fdeef3; --ink:#23212a; --muted:#7a7586;
@@ -94,7 +95,7 @@ const $ = id => document.getElementById(id);
 function esc(s){
   return String(s == null ? "" : s)
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-    .replace(/"/g, """).replace(/'/g, "&#39;");
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
 function enc(p){ return p.split("/").map(encodeURIComponent).join("/"); }
@@ -181,10 +182,15 @@ function search(q){
   $("result").innerHTML = "";
   if (!q){ $("list").innerHTML = ""; return; }
   const hits = [];
+  // 搜索同时匹配「学院 + 专业 + 课程名」，这样搜「计算机」「医学院」也能命中。
   DATA.colleges.forEach(c => c.majors.forEach(m => m.courses.forEach(k => {
-    if (k.toLowerCase().includes(q)) hits.push({college:c.name, major:m.name, course:k});
+    const haystack = (c.name + " " + m.name + " " + k).toLowerCase();
+    if (haystack.includes(q)) hits.push({college:c.name, major:m.name, course:k});
   })));
-  DATA.public.forEach(k => { if (k.toLowerCase().includes(q)) hits.push({college:"公共课", major:"", course:k}); });
+  DATA.public.forEach(k => {
+    const haystack = ("公共课 " + k).toLowerCase();
+    if (haystack.includes(q)) hits.push({college:"公共课", major:"", course:k});
+  });
   if (!hits.length){ $("list").innerHTML = '<li class="empty">没有匹配的课程。可能还没建目录，去仓库开个 Issue 说一声。</li>'; return; }
   const max = 40;
   $("list").innerHTML = hits.slice(0, max).map(h => {

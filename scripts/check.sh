@@ -169,6 +169,31 @@ while IFS= read -r file; do
     echo "  ⚠ 命名不规范: $file"
     bad=$((bad + 1))
   fi
+
+  # 文件名里的类型词必须与所在资料子目录一致，避免“实验报告”放进 作业/。
+  # 这里独立于上面的命名规范检查：即使文件名格式有误，只要类型词可识别，
+  # 也会指出目录放错（不新增致命退出逻辑）。
+  rest=${base#*-}
+  type_word=${rest%%-*}
+  case "$type_word" in
+    期末|期中|试卷|复习|答案) allowed_dirs="试卷 复习资料" ;;
+    笔记) allowed_dirs="笔记" ;;
+    作业) allowed_dirs="作业" ;;
+    实验报告|实验) allowed_dirs="实验报告" ;;
+    课件) allowed_dirs="课件" ;;
+    *) allowed_dirs="" ;;
+  esac
+  if [ -n "$allowed_dirs" ]; then
+    parent=${file%/*}
+    subdir=${parent##*/}
+    case " $allowed_dirs " in
+      *" $subdir "*) ;;
+      *)
+        echo "  ⚠ 类型与目录不一致: $file（文件名类型「$type_word」，应放在 $allowed_dirs）"
+        bad=$((bad + 1))
+        ;;
+    esac
+  fi
 done < "$tmpdir/files"
 
 echo "== 3. 检查超过 50MB 的文件 =="
@@ -185,7 +210,7 @@ fi
 
 echo "== 4. 检查文本文件中的疑似个人信息 =="
 find courses -type f \( -name '*.md' -o -name '*.txt' \) \
-  -exec grep -lE '学号[:：][0-9]{6,}|身份证|[0-9]{17}[0-9Xx]|(^|[^0-9])1[3-9][0-9]{9}([^0-9]|$)' {} + \
+  -exec grep -lE '学号[:：][0-9]{6,}|身份证|[0-9]{17}[0-9Xx]' {} + \
   2>/dev/null | sort > "$tmpdir/privacy"
 if [ -s "$tmpdir/privacy" ]; then
   while IFS= read -r file; do

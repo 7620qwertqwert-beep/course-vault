@@ -19,7 +19,7 @@ jobs:
       - name: 检出代码（PR 用 head，push 用当前分支）
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
           persist-credentials: false
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.ref }}
 
@@ -42,6 +42,28 @@ jobs:
               git fetch --no-tags origin "$BASE_SHA"
             fi
             git cat-file -e "$BASE_SHA^{commit}"
+
+            # fetch-depth: 1 时 HEAD 是浅边界，只有 base commit 对象还不够：
+            # 后面的 `git diff "$BASE_SHA...HEAD"` 需要 merge base。先按需加深
+            # base/head 的历史；仍找不到时完整拉取，避免浅克隆把差异检查跑挂。
+            if ! git merge-base "$BASE_SHA" HEAD >/dev/null 2>&1; then
+              head_sha="$(git rev-parse HEAD)"
+              for depth in 50 200 1000; do
+                git fetch --no-tags --depth="$depth" origin "$BASE_SHA" || true
+                git fetch --no-tags --depth="$depth" origin "$head_sha" || true
+                if git merge-base "$BASE_SHA" HEAD >/dev/null 2>&1; then
+                  break
+                fi
+              done
+            fi
+            if ! git merge-base "$BASE_SHA" HEAD >/dev/null 2>&1; then
+              git fetch --no-tags --unshallow origin || true
+            fi
+            if ! git merge-base "$BASE_SHA" HEAD >/dev/null 2>&1; then
+              # 某些远端不支持单独加深某个 SHA：按最大深度显式取 base/head。
+              git fetch --no-tags --depth=2147483647 origin "$BASE_SHA" "$head_sha" || true
+            fi
+            git merge-base "$BASE_SHA" HEAD >/dev/null
 
             git show "$BASE_SHA:scripts/check.sh" > "$trusted/check.sh"
             git show "$BASE_SHA:scripts/build_index.py" > "$trusted/build_index.py"

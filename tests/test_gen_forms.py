@@ -76,6 +76,15 @@ def write_generic(root):
             "    validations:",
             "      required: false",
             "",
+            "  - type: input",
+            "    id: year",
+            "    attributes:",
+            "      label: 年份学期",
+            "      description: {}".format(gen_forms._q(gen_forms.YEAR_DESCRIPTION)),
+            "      placeholder: {}".format(gen_forms._q(gen_forms.YEAR_PLACEHOLDER)),
+            "    validations:",
+            "      required: true",
+            "",
         ]
     )
     template = root / ".github" / "ISSUE_TEMPLATE" / "上传资料.yml"
@@ -382,6 +391,36 @@ class GenFormsTest(unittest.TestCase):
             problems = gen_forms._generic_problems()
         self.assertTrue(any("开课学院" in item for item in problems), problems)
         self.assertTrue(any("所属专业" in item for item in problems), problems)
+
+    def test_generic_template_check_detects_year_drift(self):
+        source = gen_forms.TEMPLATE_DIR / gen_forms.GENERIC_TEMPLATE_NAME
+        content = source.read_text(encoding="utf-8")
+        with tempfile.TemporaryDirectory(prefix="gen-forms-year-") as tmp:
+            template_dir = Path(tmp)
+            target = template_dir / gen_forms.GENERIC_TEMPLATE_NAME
+            target.write_text(content, encoding="utf-8")
+            with mock.patch.object(gen_forms, "TEMPLATE_DIR", template_dir):
+                self.assertEqual(gen_forms._generic_problems(), [])
+
+                wrong_description = content.replace(
+                    gen_forms.YEAR_DESCRIPTION, "随便写的年份说明", 1
+                )
+                target.write_text(wrong_description, encoding="utf-8")
+                problems = gen_forms._generic_problems()
+                self.assertTrue(
+                    any("年份学期" in item for item in problems), problems
+                )
+
+                wrong_type = content.replace(
+                    "  - type: input\n    id: year",
+                    "  - type: dropdown\n    id: year",
+                    1,
+                )
+                target.write_text(wrong_type, encoding="utf-8")
+                problems = gen_forms._generic_problems()
+                self.assertTrue(
+                    any("年份学期" in item for item in problems), problems
+                )
 
     def test_generator_quotes_parentheses_in_college_and_course_names(self):
         with tempfile.TemporaryDirectory(prefix="gen-forms-special-") as tmp:
