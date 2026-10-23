@@ -155,7 +155,7 @@ public_count=$(wc -l < "$tmpdir/public" | tr -d ' ')
 professional_count=$(wc -l < "$tmpdir/professional" | tr -d ' ')
 echo "  课程数：公共课 ${public_count} 门，专业课 ${professional_count} 门。"
 
-echo "== 2. 检查文件名规范（应为 YYYY春/秋-类型-描述） =="
+echo "== 2. 检查文件名规范（应为 YYYY春/秋-描述） =="
 find courses -type f 2>/dev/null | sort > "$tmpdir/files"
 while IFS= read -r file; do
   [ -n "$file" ] || continue
@@ -165,7 +165,9 @@ while IFS= read -r file; do
     README.md|.gitkeep|*.bak|*.bak-*|*.tmp|.DS_Store|Thumbs.db|desktop.ini|'~$'*) continue ;;
   esac
   # 除 README.md 与 .gitkeep 外，.md 笔记也必须遵守命名规范。
-  if ! printf '%s\n' "$base" | grep -qE '^20[0-9]{2}(春|秋)-(期末|期中|笔记|作业|实验报告|实验|课件|复习|答案)-'; then
+  # 目录本身已经写明了学院/专业/课程/资料类型，文件名只需要「年份-描述」；
+  # 老文件（YYYY-类型-课程）同样满足这条规则，不做批量改名。
+  if ! printf '%s\n' "$base" | grep -qE '^20[0-9]{2}(春|秋)-.+\.[A-Za-z0-9]+$'; then
     echo "  ⚠ 命名不规范: $file"
     bad=$((bad + 1))
   fi
