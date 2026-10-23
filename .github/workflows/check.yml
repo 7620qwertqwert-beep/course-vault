@@ -82,13 +82,16 @@ jobs:
           python3 scripts/.ci_trusted_build_index.py --check
 
       # ---------- 表单模板一致性 ----------
+      # 注意：这里**故意**用 PR 工作区里的 scripts/gen_forms.py，而不是 base 版本。
+      # 原因：模板（.github/ISSUE_TEMPLATE/*.yml）与生成器是强耦合的一对，
+      #       用旧版生成器检查新模板必然误报「EXTRA/缺少」。
+      # 安全性：scripts/** 属治理文件，check.sh 已硬性拦下非 owner 对 scripts/ 的改动，
+      #       所以能改生成器的人只能是仓库 owner，等同于可信。
       - name: 表单模板一致性
         shell: bash
         run: |
           set -eu
-          cp "$TRUSTED_DIR/gen_forms.py" scripts/.ci_trusted_gen_forms.py
-          trap 'rm -f scripts/.ci_trusted_gen_forms.py' EXIT
-          python3 scripts/.ci_trusted_gen_forms.py --check
+          python3 scripts/gen_forms.py --check
 
       # ---------- 2. 文件体积 ----------
       - name: 单文件体积检查（上限 50MB）

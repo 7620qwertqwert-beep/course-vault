@@ -14,13 +14,15 @@
   * 扩展名只允许 pdf/doc/docx/ppt/pptx/xls/xlsx/md/txt/jpg/jpeg/png/zip。
 
 学院、专业既可以下拉选择，也可以在「学院名称」「专业名称」补充框里手写；
-手写值优先于下拉值，支持末尾括号说明。学院模板的专业选项只写纯专业名：
-脚本先用「开课学院」定位学院，再在该学院下找专业；通用模板仍支持
-「学院·专业」「学院/专业」。找不到时用 difflib 给出最接近的 1~3 个候选，
-并标明候选属于哪个学院。公共课模板的「课程名」是下拉兜底项的补充框：
-下拉选「其他（在下面写）」或为空时使用它，下拉已是具体课程时以缓存的下拉
-值为准，避免切换选项后残留的补充文本覆盖正确课程。容错只影响“找哪个真实
-目录”，不会放宽上面的安全检查。
+手写值优先于下拉值，支持末尾括号说明。专业模板的学院/专业输入框已预填
+纯名（专业名不带学院前缀）：脚本先用「开课学院」定位学院，再在该学院下
+找专业；通用模板仍支持「学院·专业」「学院/专业」。课程名来自下拉时是
+纯课程名，脚本用「学院 + 专业」把它定位到 学院/专业/课程 四层目录。
+找不到课程时用 difflib 给出该专业下最接近的 1~3 个候选，并提示改对后重试；
+旧格式（「学院·专业」、只写专业名、末尾带括号说明）仍然兼容。公共课旧模板
+的「课程名」是下拉兜底项的补充框：下拉选「其他（在下面写）」或为空时使用
+它，下拉已是具体课程时以缓存的下拉值为准，避免切换选项后残留的补充文本
+覆盖正确课程。容错只影响“找哪个真实目录”，不会放宽上面的安全检查。
 
 本地调试：
     IMPORT_ISSUE_BODY_FILE=/tmp/fake_issue.md \
@@ -506,15 +508,23 @@ def _strip_trailing_parenthetical(text):
 
 
 def _resolve_college(value, label="开课学院"):
-    """把用户填写的学院归一成 courses/专业课 下的真实目录名。"""
-    text = _strip_trailing_parenthetical(_single_line(value, label))
-    if not text:
-        _fail("{}去掉括号说明后为空。".format(label))
-    text = _validate_component(text, label)
+    """把用户填写的学院归一成 courses/专业课 下的真实目录名。
 
+    先按原样精确匹配，找不到时再去掉末尾括号说明重试；这样既能容忍
+    「计算机与信息技术学院（软件学院）」这类备注，也不会误伤目录名本身
+    带括号的情况。
+    """
+    text = _single_line(value, label)
     colleges = _college_names()
     if text in colleges:
         return text
+
+    stripped = _strip_trailing_parenthetical(text)
+    if not stripped:
+        _fail("{}去掉括号说明后为空。".format(label))
+    if stripped in colleges:
+        return stripped
+    text = _validate_component(stripped, label)
 
     suggestions = _closest(text, colleges)
     if suggestions:
@@ -619,15 +629,38 @@ def _resolve_major(value, college=None):
             )
         parsed_college = _resolve_college(parts[0], "所属专业中的学院名")
         major = _validate_component(parts[1], "所属专业中的专业名")
+        if major not in _major_names(parsed_college):
+            stripped = _strip_trailing_parenthetical(major)
+            if stripped and stripped != major and stripped in _major_names(
+                parsed_college
+            ):
+                major = _validate_component(stripped, "所属专业中的专业名")
         _resolve_major_in_college(parsed_college, major)
         return parsed_college, major
 
     major = _validate_component(text, "所属专业中的专业名")
     if college:
+        # 兼容「康复治疗学（中外合作）」这类末尾括号备注：只在精确匹配失败
+        # 且去掉括号后的名字确实存在时才采用，避免误伤带括号的真实目录名。
+        if major not in _major_names(college):
+            stripped = _strip_trailing_parenthetical(major)
+            if stripped and stripped != major and stripped in _major_names(college):
+                major = _validate_component(stripped, "所属专业中的专业名")
         _resolve_major_in_college(college, major)
         return college, major
 
     pairs = [(college, name) for college, name in _all_major_pairs() if name == major]
+    if not pairs:
+        stripped = _strip_trailing_parenthetical(major)
+        if stripped and stripped != major:
+            stripped_pairs = [
+                (college, name)
+                for college, name in _all_major_pairs()
+                if name == stripped
+            ]
+            if stripped_pairs:
+                major = _validate_component(stripped, "所属专业中的专业名")
+                pairs = stripped_pairs
     if len(pairs) == 1:
         return pairs[0]
     if len(pairs) > 1:
