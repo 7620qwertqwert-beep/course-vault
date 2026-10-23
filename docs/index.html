@@ -109,7 +109,8 @@
       .split(QUOT).join(AMP + "quot;");
   }
   function encPath(p) { return p.split("/").map(encodeURIComponent).join("/"); }
-  function rawUrl(c, f) { return RAW + encPath(c.p + "/" + f.t + "/" + f.n); }
+  // 下载走本站静态目录（/courses/...）。Gitee raw 有防盗链：带 Referer 过去会 403。
+  function rawUrl(c, f) { return "/" + encPath(c.p + "/" + f.t + "/" + f.n); }
   function courseUrl(c) { return "#/c/" + encodeURIComponent(c.p); }
   function giteeDirUrl(c) { return REPO + "/tree/main/" + encPath(c.p); }
   function sizeText(n) {
