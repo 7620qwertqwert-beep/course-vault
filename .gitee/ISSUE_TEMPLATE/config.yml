@@ -1,8 +1,0 @@
-blank_issues_enabled: true
-contact_links:
-  - name: 资料库首页
-    url: https://gitee.com/youliboshi/course-vault
-    about: 浏览、下载、上传都在这里
-  - name: 使用说明
-    url: https://gitee.com/youliboshi/course-vault/blob/main/CONTRIBUTING.md
-    about: 上传规则与字段填写说明
