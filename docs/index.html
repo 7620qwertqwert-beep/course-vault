@@ -106,6 +106,8 @@ function courseUrl(college, major, course){
        + "/" + encodeURIComponent(major) + "/" + encodeURIComponent(course);
 }
 function uploadUrl(college){
+  // 国内镜像：直接用自建上传页（三级下拉 + 拖拽）
+  if (!ON_PAGES) return "upload.html";
   const tpl = college === "公共课" ? "上传资料-公共课.yml" : "上传资料-" + college + ".yml";
   return REPO_URL + "/issues/new?template=" + encodeURIComponent(tpl);
 }
@@ -121,7 +123,7 @@ function showCard(college, major, course){
         '<a class="btn primary" href="' + courseUrl(college, major, course) + '">去这门课的资料页</a>' +
         '<a class="btn ghost" href="' + uploadUrl(college) + '">传资料到这</a>' +
       '</div>' +
-      '<div class="hint">传资料时：学院已由模板填好，专业和课程在表单里对着选（GitHub 表单不允许外部预填这两项）。</div>' +
+      '<div class="hint">传资料时：学院、专业、课程在下一步的页面上直接选，不用手写。</div>' +
     '</div>';
 }
 
