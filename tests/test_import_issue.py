@@ -44,6 +44,7 @@ def make_body(
     major="医学院·康复治疗学",
     major_manual="",
     course="康复医学概论",
+    course_manual="_No response_",
     year="2025秋",
     material_type="笔记",
     attachments=None,
@@ -59,6 +60,7 @@ def make_body(
         "### 所属专业\n\n{major}\n\n"
         "### 专业名称\n\n{major_manual}\n\n"
         "### 课程名称\n\n{course}\n\n"
+        "### 课程名\n\n{course_manual}\n\n"
         "### 年份学期\n\n{year}\n\n"
         "### 资料类型\n\n{material_type}\n\n"
         "### 附件\n\n{attachments}\n\n"
@@ -70,6 +72,7 @@ def make_body(
         major=major,
         major_manual=major_manual,
         course=course,
+        course_manual=course_manual,
         year=year,
         material_type=material_type,
         attachments=attachments,
@@ -124,6 +127,26 @@ class ImportIssueTest(unittest.TestCase):
         source.parent.mkdir(parents=True, exist_ok=True)
         source.write_bytes(content)
         return source
+
+    def add_course(self, college, major, course):
+        """在临时课程树里补一门专业课，返回课程目录。"""
+        path = self.courses / "专业课" / college / major / course
+        for subdir in ("笔记", "课件", "试卷", "作业"):
+            (path / subdir).mkdir(parents=True, exist_ok=True)
+        (path / "README.md").write_text(
+            "# {}\n".format(course), encoding="utf-8"
+        )
+        return path
+
+    def add_public_course(self, course):
+        """在临时课程树里补一门公共课，返回课程目录。"""
+        path = self.courses / "公共课" / course
+        for subdir in ("笔记", "课件", "试卷", "作业"):
+            (path / subdir).mkdir(parents=True, exist_ok=True)
+        (path / "README.md").write_text(
+            "# {}\n".format(course), encoding="utf-8"
+        )
+        return path
 
     # ---------- 解析 ----------
 
@@ -345,6 +368,130 @@ class ImportIssueTest(unittest.TestCase):
         self.assertEqual(form["college"], "医学院")
         self.assertEqual(form["college_source"], "derived")
         self.assertEqual(form["major"], "康复治疗学")
+
+    def test_blank_college_with_duplicate_major_fails_with_both_colleges(self):
+        for college in ("商学院", "国际教育学院"):
+            self.add_course(college, "经济学", "宏观经济学")
+        body = make_body(
+            college="_No response_", major="经济学", course="宏观经济学"
+        )
+        with self.assertRaises(imp.ImportFailure) as ctx:
+            imp._parse_form("", body)
+        message = str(ctx.exception)
+        self.assertIn("专业「经济学」在多个学院都有", message)
+        self.assertIn("商学院·经济学", message)
+        self.assertIn("国际教育学院·经济学", message)
+
+    def test_pure_major_name_locates_course_in_its_college(self):
+        self.add_course("医学院", "护理学", "人体解剖学")
+        body = make_body(college="医学院", major="护理学", course="人体解剖学")
+        form = imp._parse_form("", body)
+        self.assertEqual((form["college"], form["major"]), ("医学院", "护理学"))
+
+        self.write_body(body)
+        code, out, _ = self.run_main("--dry-run")
+        self.assertEqual(code, 0, out)
+        self.assertIn(
+            "courses/专业课/医学院/护理学/人体解剖学/笔记", out
+        )
+
+    def test_duplicate_major_is_scoped_to_each_requested_college(self):
+        for college in ("商学院", "国际教育学院"):
+            self.add_course(college, "经济学", "宏观经济学")
+        for college in ("商学院", "国际教育学院"):
+            with self.subTest(college=college):
+                body = make_body(
+                    college=college, major="经济学", course="宏观经济学"
+                )
+                form = imp._parse_form("", body)
+                self.assertEqual(form["college"], college)
+                self.assertEqual(form["major"], "经济学")
+                self.write_body(body)
+                code, out, _ = self.run_main("--dry-run")
+                self.assertEqual(code, 0, out)
+                self.assertIn(
+                    "courses/专业课/{}/经济学/宏观经济学/笔记".format(college),
+                    out,
+                )
+
+    def test_wrong_college_reports_the_actual_college(self):
+        self.add_course("文学院", "汉语言文学", "现代汉语")
+        self.write_body(
+            make_body(
+                college="文学院", major="康复治疗学", course="康复医学概论"
+            )
+        )
+        code, out, _ = self.run_main("--dry-run")
+        self.assertEqual(code, 2)
+        self.assertIn("在学院「文学院」下找不到专业「康复治疗学」", out)
+        self.assertIn("专业「康复治疗学」实际属于：医学院·康复治疗学", out)
+        self.assertIn("请把「开课学院」改成「医学院」", out)
+
+    def test_public_other_option_uses_course_manual_field(self):
+        self.add_public_course("高等数学")
+        body = make_body(
+            category="公共课",
+            college="_No response_",
+            major="_No response_",
+            course=imp.OTHER_OPTION,
+            course_manual="高等数学",
+        )
+        form = imp._parse_form("", body)
+        self.assertEqual(form["category"], "公共课")
+        self.assertEqual(form["course"], "高等数学")
+
+        self.write_body(body)
+        code, out, _ = self.run_main("--dry-run")
+        self.assertEqual(code, 0, out)
+        self.assertIn("courses/公共课/高等数学/笔记", out)
+
+    def test_public_other_option_without_manual_course_fails_clearly(self):
+        body = make_body(
+            category="公共课",
+            college="_No response_",
+            major="_No response_",
+            course=imp.OTHER_OPTION,
+            course_manual="_No response_",
+        )
+        with self.assertRaises(imp.ImportFailure) as ctx:
+            imp._parse_form("", body)
+        message = str(ctx.exception)
+        self.assertIn("课程名称选择了「其他（在下面写）」", message)
+        self.assertIn("「课程名」为空", message)
+
+    def test_public_concrete_dropdown_wins_over_stale_manual_text(self):
+        body = make_body(
+            category="公共课",
+            college="_No response_",
+            major="_No response_",
+            course="高等数学",
+            course_manual="马克思主义基本原理",
+        )
+        form = imp._parse_form("", body)
+        self.assertEqual(form["course"], "高等数学")
+
+    def test_course_alias_falls_back_when_primary_field_is_blank(self):
+        body = make_body()
+        body = body.replace(
+            "### 课程名称\n\n康复医学概论", "### 课程名称\n\n_No response_", 1
+        )
+        body = body.replace(
+            "### 课程名\n\n_No response_", "### 课程名\n\n康复医学概论", 1
+        )
+        form = imp._parse_form("", body)
+        self.assertEqual(form["course"], "康复医学概论")
+
+    def test_title_prefix_and_shell_text_do_not_affect_parsing(self):
+        self.add_course("医学院", "护理学", "人体解剖学")
+        body = make_body(college="医学院", major="护理学", course="人体解剖学")
+        marker = self.root / "pwn-marker"
+        title = "[上传] $(touch {}) `id` ' \"".format(marker)
+        form = imp._parse_form(title, body)
+        self.assertEqual(form["course"], "人体解剖学")
+        self.assertFalse(
+            marker.exists(),
+            "解析 Issue 标题时不应执行其中的 shell 文本",
+        )
 
     def test_dropdown_only_college_and_major(self):
         body = make_body()
