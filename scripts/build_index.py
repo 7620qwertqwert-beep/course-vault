@@ -29,7 +29,7 @@ PUBLIC_DIR = COURSES_DIR / "公共课"
 MAJOR_DIR = COURSES_DIR / "专业课"
 INDEX_PATH = REPO_ROOT / "INDEX.md"
 
-SUBDIRS = ("笔记", "课件", "试卷", "作业")
+SUBDIRS = ("笔记", "课件", "试卷", "作业", "实验报告", "复习资料")
 EMPTY = "—"
 
 STATUS_PENDING = "⬜ 待填"
@@ -161,7 +161,7 @@ def _parse_difficulty(text):
 
 
 def _count_materials(course_dir):
-    """统计四个资料目录中除 .gitkeep 外的文件总数（含子目录）。"""
+    """统计六个资料目录中除 .gitkeep 外的文件总数（含子目录）。"""
     total = 0
     for subdir in SUBDIRS:
         directory = course_dir / subdir
