@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>信师大南湖课栈 · 找课 / 传资料</title>
+<style>
+  :root{
+    --pink:#e26d97; --pink-soft:#fdeef3; --ink:#23212a; --muted:#7a7586;
+    --line:#efe9ef; --card:#fff; --bg:#fdfbfc;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+       line-height:1.55;padding:0 14px 40px}
+  header{padding:22px 0 10px;text-align:center}
+  h1{margin:0;font-size:22px;letter-spacing:.5px}
+  h1 span{color:var(--pink)}
+  .sub{margin:6px 0 0;color:var(--muted);font-size:13px}
+  .stats{margin:10px 0 0;font-size:12px;color:var(--muted)}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:16px;
+         padding:14px;margin:14px 0;box-shadow:0 2px 10px rgba(226,109,151,.05)}
+  label{display:block;font-size:13px;color:var(--muted);margin:0 0 5px}
+  select,input[type=text]{width:100%;padding:12px 12px;font-size:16px;color:var(--ink);
+         background:#fff;border:1px solid var(--line);border-radius:11px;appearance:none}
+  input[type=text]{-webkit-appearance:none}
+  select:focus,input:focus{outline:none;border-color:var(--pink)}
+  .row{margin-bottom:12px}
+  .row:last-child{margin-bottom:0}
+  .card{background:var(--pink-soft);border-radius:13px;padding:13px 14px;margin-top:12px}
+  .card .name{font-size:17px;font-weight:600}
+  .card .path{font-size:12px;color:var(--muted);margin-top:2px}
+  .btns{display:flex;gap:9px;margin-top:11px}
+  a.btn{flex:1;text-align:center;text-decoration:none;padding:11px 8px;border-radius:11px;
+        font-size:14px;font-weight:600}
+  a.primary{background:var(--pink);color:#fff}
+  a.ghost{background:#fff;color:var(--pink);border:1px solid var(--pink)}
+  .hint{font-size:12px;color:var(--muted);margin-top:9px}
+  ul.results{list-style:none;margin:10px 0 0;padding:0}
+  ul.results li{border-bottom:1px solid var(--line);padding:10px 2px;font-size:14px}
+  ul.results li:last-child{border-bottom:none}
+  ul.results a{color:var(--ink);text-decoration:none;display:block}
+  ul.results .p{color:var(--muted);font-size:12px}
+  em{color:var(--pink);font-style:normal;font-weight:700}
+  footer{text-align:center;color:var(--muted);font-size:12px;margin-top:22px}
+  footer a{color:var(--pink);text-decoration:none}
+  .empty{color:var(--muted);font-size:13px;padding:10px 2px}
+</style>
+</head>
+<body>
+<header>
+  <h1>信师大<span>南湖课栈</span></h1>
+  <p class="sub">信阳师范大学 · 课程资料共享库</p>
+  <p class="stats" id="stats">加载中…</p>
+</header>
+
+<div class="panel">
+  <div class="row">
+    <label for="college">① 学院</label>
+    <select id="college"><option value="">请选择学院</option></select>
+  </div>
+  <div class="row">
+    <label for="major">② 专业</label>
+    <select id="major" disabled><option value="">先选学院</option></select>
+  </div>
+  <div class="row">
+    <label for="course">③ 课程</label>
+    <select id="course" disabled><option value="">先选专业</option></select>
+  </div>
+  <div class="row">
+    <label for="q">或者直接搜课程名</label>
+    <input type="text" id="q" placeholder="例如：康复评定、数据结构、无机化学" autocomplete="off">
+  </div>
+  <div id="result"></div>
+  <ul class="results" id="list"></ul>
+</div>
+
+<footer>
+  <a href="https://github.com/7620qwertqwert-beep/course-vault" id="repo">进入仓库首页</a>
+  　·　<a href="https://github.com/7620qwertqwert-beep/course-vault/blob/main/INDEX.md">全部课程索引</a>
+  　·　<a href="https://github.com/7620qwertqwert-beep/course-vault/blob/main/docs/官方核心课程.md">官方核心课程</a>
+  <p class="hint" style="margin-top:10px">本站只负责「找得到」，上传请走 GitHub 表单（按钮已带好学院模板）。</p>
+</footer>
+
+<script>
+const OWNER_REPO = "7620qwertqwert-beep/course-vault";
+const REPO_URL = "https://github.com/" + OWNER_REPO;
+document.getElementById("repo").href = REPO_URL;
+
+let DATA = null;
+const $ = id => document.getElementById(id);
+
+function enc(p){ return p.split("/").map(encodeURIComponent).join("/"); }
+
+function courseUrl(college, major, course){
+  if (college === "公共课") return REPO_URL + "/tree/main/courses/公共课/" + encodeURIComponent(course);
+  return REPO_URL + "/tree/main/courses/专业课/" + encodeURIComponent(college)
+       + "/" + encodeURIComponent(major) + "/" + encodeURIComponent(course);
+}
+function uploadUrl(college){
+  const tpl = college === "公共课" ? "上传资料-公共课.yml" : "上传资料-" + college + ".yml";
+  return REPO_URL + "/issues/new?template=" + encodeURIComponent(tpl);
+}
+
+function showCard(college, major, course){
+  $("list").innerHTML = "";
+  const path = college === "公共课" ? "公共课" : college + " · " + major;
+  $("result").innerHTML =
+    '<div class="card">' +
+      '<div class="name">' + course + '</div>' +
+      '<div class="path">' + path + '</div>' +
+      '<div class="btns">' +
+        '<a class="btn primary" href="' + courseUrl(college, major, course) + '">去这门课的资料页</a>' +
+        '<a class="btn ghost" href="' + uploadUrl(college) + '">传资料到这</a>' +
+      '</div>' +
+      '<div class="hint">传资料时：学院已由模板填好，专业和课程在表单里对着选（GitHub 表单不允许外部预填这两项）。</div>' +
+    '</div>';
+}
+
+function fillColleges(){
+  const sel = $("college");
+  DATA.colleges.forEach(c => {
+    const o = document.createElement("option");
+    o.value = c.name; o.textContent = c.name; sel.appendChild(o);
+  });
+  const o = document.createElement("option");
+  o.value = "公共课"; o.textContent = "公共课（全校通用）"; sel.appendChild(o);
+}
+
+function onCollege(){
+  const college = $("college").value;
+  const mj = $("major"), cs = $("course");
+  mj.innerHTML = ""; cs.innerHTML = "";
+  $("result").innerHTML = ""; $("list").innerHTML = "";
+  if (!college){ mj.disabled = true; cs.disabled = true;
+    mj.innerHTML = '<option value="">先选学院</option>';
+    cs.innerHTML = '<option value="">先选专业</option>'; return; }
+  if (college === "公共课"){
+    mj.innerHTML = '<option value="公共课">公共课</option>';
+    mj.disabled = true;
+    cs.disabled = false;
+    cs.innerHTML = '<option value="">请选择课程</option>';
+    DATA.public.forEach(c => {
+      const o = document.createElement("option"); o.value = c; o.textContent = c; cs.appendChild(o);
+    });
+    return;
+  }
+  mj.disabled = false;
+  mj.innerHTML = '<option value="">请选择专业</option>';
+  const c = DATA.colleges.find(x => x.name === college);
+  c.majors.forEach(m => {
+    const o = document.createElement("option"); o.value = m.name; o.textContent = m.name; mj.appendChild(o);
+  });
+  cs.disabled = true;
+  cs.innerHTML = '<option value="">先选专业</option>';
+}
+
+function onMajor(){
+  const college = $("college").value, mj = $("major").value;
+  const cs = $("course");
+  cs.innerHTML = ""; $("result").innerHTML = ""; $("list").innerHTML = "";
+  if (!college || !mj){ cs.disabled = true; cs.innerHTML = '<option value="">先选专业</option>'; return; }
+  const c = DATA.colleges.find(x => x.name === college);
+  const m = c.majors.find(x => x.name === mj);
+  cs.disabled = false;
+  cs.innerHTML = '<option value="">请选择课程</option>';
+  m.courses.forEach(k => {
+    const o = document.createElement("option"); o.value = k; o.textContent = k; cs.appendChild(o);
+  });
+}
+
+function search(q){
+  q = q.trim().toLowerCase();
+  $("result").innerHTML = "";
+  if (!q){ $("list").innerHTML = ""; return; }
+  const hits = [];
+  DATA.colleges.forEach(c => c.majors.forEach(m => m.courses.forEach(k => {
+    if (k.toLowerCase().includes(q)) hits.push({college:c.name, major:m.name, course:k});
+  })));
+  DATA.public.forEach(k => { if (k.toLowerCase().includes(q)) hits.push({college:"公共课", major:"", course:k}); });
+  if (!hits.length){ $("list").innerHTML = '<li class="empty">没有匹配的课程。可能还没建目录，去仓库开个 Issue 说一声。</li>'; return; }
+  const max = 40;
+  $("list").innerHTML = hits.slice(0, max).map(h => {
+    const path = h.college === "公共课" ? "公共课" : h.college + " · " + h.major;
+    return '<li><a href="' + courseUrl(h.college, h.major, h.course) + '">' +
+      '<span>' + h.course + '</span><div class="p">' + path + '</div></a></li>';
+  }).join("") + (hits.length > max ? '<li class="empty">还有 ' + (hits.length - max) + ' 条，请输入更具体的关键词。</li>' : '');
+}
+
+fetch("./data/courses.json").then(r => r.json()).then(d => {
+  DATA = d;
+  const c = d.counts;
+  $("stats").textContent = c.colleges + " 个学院 · " + c.majors + " 个专业 · " + c.courses + " 门课";
+  fillColleges();
+  $("college").addEventListener("change", onCollege);
+  $("major").addEventListener("change", onMajor);
+  $("course").addEventListener("change", e => {
+    if (!e.target.value) return;
+    showCard($("college").value, $("major").value, e.target.value);
+  });
+  let t = null;
+  $("q").addEventListener("input", e => {
+    clearTimeout(t);
+    const v = e.target.value;
+    t = setTimeout(() => search(v), 160);
+  });
+}).catch(err => {
+  $("stats").textContent = "数据加载失败，请刷新或直接进仓库";
+});
+</script>
+</body>
+</html>
