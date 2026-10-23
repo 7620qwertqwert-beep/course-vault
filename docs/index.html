@@ -2,226 +2,332 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>信师大南湖课栈 · 找课 / 传资料</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2064%2064'%3E%3Crect%20width='64'%20height='64'%20rx='14'%20fill='%23e26d97'/%3E%3Cpath%20d='M16%2018h13a7%207%200%200%201%207%207v23a7%207%200%200%200-7-7H16z'%20fill='%23fff'/%3E%3Cpath%20d='M48%2018H35a7%207%200%200%200-7%207v23a7%207%200%200%201%207-7h13z'%20fill='%23fff'%20opacity='.85'/%3E%3C/svg%3E">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>信师大南湖课栈 · 找资料</title>
+<link rel="icon" href="data:,">
+
 <style>
-  :root{
-    --pink:#e26d97; --pink-soft:#fdeef3; --ink:#23212a; --muted:#7a7586;
-    --line:#efe9ef; --card:#fff; --bg:#fdfbfc;
-  }
+  :root{--pink:#e26d8a;--ink:#222;--muted:#7b7b7b;--line:#e6e6e6;--bg:#fafafa}
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);
-       font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
-       line-height:1.55;padding:0 14px 40px}
-  header{padding:22px 0 10px;text-align:center}
-  h1{margin:0;font-size:22px;letter-spacing:.5px}
+       font:16px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
+  .wrap{max-width:760px;margin:0 auto;padding:14px 14px 44px}
+  header{text-align:center;padding:12px 0 4px}
+  h1{font-size:21px;margin:0 0 4px}
   h1 span{color:var(--pink)}
-  .sub{margin:6px 0 0;color:var(--muted);font-size:13px}
-  .stats{margin:10px 0 0;font-size:12px;color:var(--muted)}
-  .panel{background:var(--card);border:1px solid var(--line);border-radius:16px;
-         padding:14px;margin:14px 0;box-shadow:0 2px 10px rgba(226,109,151,.05)}
-  label{display:block;font-size:13px;color:var(--muted);margin:0 0 5px}
-  select,input[type=text]{width:100%;padding:12px 12px;font-size:16px;color:var(--ink);
-         background:#fff;border:1px solid var(--line);border-radius:11px;appearance:none}
-  input[type=text]{-webkit-appearance:none}
-  select:focus,input:focus{outline:none;border-color:var(--pink)}
-  .row{margin-bottom:12px}
-  .row:last-child{margin-bottom:0}
-  .card{background:var(--pink-soft);border-radius:13px;padding:13px 14px;margin-top:12px}
-  .card .name{font-size:17px;font-weight:600}
-  .card .path{font-size:12px;color:var(--muted);margin-top:2px}
-  .btns{display:flex;gap:9px;margin-top:11px}
-  a.btn{flex:1;text-align:center;text-decoration:none;padding:11px 8px;border-radius:11px;
-        font-size:14px;font-weight:600}
-  a.primary{background:var(--pink);color:#fff}
-  a.ghost{background:#fff;color:var(--pink);border:1px solid var(--pink)}
-  .hint{font-size:12px;color:var(--muted);margin-top:9px}
-  ul.results{list-style:none;margin:10px 0 0;padding:0}
-  ul.results li{border-bottom:1px solid var(--line);padding:10px 2px;font-size:14px}
-  ul.results li:last-child{border-bottom:none}
-  ul.results a{color:var(--ink);text-decoration:none;display:block}
-  ul.results .p{color:var(--muted);font-size:12px}
-  em{color:var(--pink);font-style:normal;font-weight:700}
-  footer{text-align:center;color:var(--muted);font-size:12px;margin-top:22px}
-  footer a{color:var(--pink);text-decoration:none}
-  .empty{color:var(--muted);font-size:13px;padding:10px 2px}
+  .sub{color:var(--muted);font-size:12.5px}
+  .searchbar{display:flex;gap:8px;margin:14px 0 6px}
+  .searchbar input{flex:1;min-width:0;padding:13px 14px;font-size:16px;color:var(--ink);
+      border:1px solid var(--line);border-radius:12px;background:#fff;-webkit-appearance:none}
+  .searchbar input:focus{outline:none;border-color:var(--pink)}
+  .searchbar button{flex:0 0 auto;padding:0 18px;font-size:16px;border:none;border-radius:12px;
+      background:var(--pink);color:#fff}
+  .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin:12px 0}
+  .row{margin:10px 0}
+  .row:first-child{margin-top:0}
+  label{display:block;font-size:12.5px;color:var(--muted);margin-bottom:6px}
+  select{width:100%;padding:12px;font-size:16px;color:var(--ink);
+      border:1px solid var(--line);border-radius:12px;background:#fff;-webkit-appearance:none}
+  .grp{font-size:13px;color:var(--muted);margin:18px 2px 6px}
+  .item{display:block;padding:12px 13px;margin:8px 0;border:1px solid var(--line);
+      border-radius:12px;background:#fff;text-decoration:none;color:inherit}
+  .item:active{background:#fff5f8}
+  .item .n{font-weight:600;word-break:break-all}
+  .item .m{font-size:12.5px;color:var(--muted);margin-top:3px}
+  .item .act{float:right;color:var(--pink);font-size:13px;margin-left:10px}
+  .empty{color:var(--muted);text-align:center;padding:26px 8px;font-size:14px}
+  .empty a{color:var(--pink)}
+  .crumb{font-size:12.5px;color:var(--muted);margin:12px 2px 4px}
+  .crumb a{color:var(--pink);text-decoration:none}
+  .cname{font-size:19px;font-weight:700;margin:2px 0 0;word-break:break-all}
+  .tags{margin:8px 0 2px}
+  .tag{display:inline-block;padding:3px 8px;margin:2px 4px 2px 0;border-radius:8px;
+      background:#fff;border:1px solid var(--line);font-size:12px;color:var(--muted)}
+  mark{background:#ffe0e8;color:inherit;border-radius:3px}
+  footer{margin-top:28px;text-align:center;font-size:13px;color:var(--muted)}
+  footer a{color:var(--pink);text-decoration:none;margin:0 6px}
+  .note{font-size:12.5px;color:var(--muted);text-align:center;margin-top:10px}
+  .back{display:inline-block;margin:10px 0 0;font-size:14px;color:var(--pink);text-decoration:none}
 </style>
 </head>
 <body>
-<header>
-  <h1>信师大<span>南湖课栈</span></h1>
-  <p class="sub">信阳师范大学 · 课程资料共享库</p>
-  <p class="stats" id="stats">加载中…</p>
-</header>
+<div class="wrap">
+  <header>
+    <h1>信师大<span>南湖课栈</span></h1>
+    <div class="sub" id="stats">加载中…</div>
+  </header>
 
-<div class="panel">
-  <div class="row">
-    <label for="college">① 学院</label>
-    <select id="college"><option value="">请选择学院</option></select>
+  <!-- 首页 -->
+  <div id="home">
+    <div class="searchbar">
+      <input id="q" type="search" placeholder="搜课程或资料：康复评定 / 骨绘画 / 期末" autocomplete="off" enterkeyhint="search">
+      <button id="go">搜索</button>
+    </div>
+    <div id="results"></div>
+
+    <div id="browse">
+      <div class="card">
+        <div class="row"><label>① 学院</label>
+          <select id="college"><option value="">请选择学院</option></select></div>
+        <div class="row"><label>② 专业</label>
+          <select id="major" disabled><option value="">先选学院</option></select></div>
+        <div class="row"><label>③ 课程</label>
+          <select id="course" disabled><option value="">先选专业</option></select></div>
+      </div>
+    </div>
   </div>
-  <div class="row">
-    <label for="major">② 专业</label>
-    <select id="major" disabled><option value="">先选学院</option></select>
-  </div>
-  <div class="row">
-    <label for="course">③ 课程</label>
-    <select id="course" disabled><option value="">先选专业</option></select>
-  </div>
-  <div class="row">
-    <label for="q">或者直接搜课程名</label>
-    <input type="text" id="q" placeholder="例如：康复评定、数据结构、无机化学" autocomplete="off">
-  </div>
-  <div id="result"></div>
-  <ul class="results" id="list"></ul>
+
+  <!-- 课程详情 -->
+  <div id="courseview" style="display:none"></div>
+
+  <footer>
+    <a href="upload.html">上传资料</a> ·
+    <a href="https://gitee.com/youliboshi/course-vault">仓库首页</a> ·
+    <a href="https://gitee.com/youliboshi/course-vault/blob/main/INDEX.md">全部课程索引</a>
+    <div class="note">只收课程学习资料，别传个人信息。</div>
+  </footer>
 </div>
 
-<footer>
-  <a href="https://gitee.com/youliboshi/course-vault" id="repo">进入仓库首页</a>
-  　·　<a href="https://gitee.com/youliboshi/course-vault/blob/main/INDEX.md">全部课程索引</a>
-  　·　<a href="https://gitee.com/youliboshi/course-vault/blob/main/docs/官方核心课程.md">官方核心课程</a>
-  <p class="hint" style="margin-top:10px">本站只负责「找得到」，上传请走 GitHub 表单（按钮已带好学院模板）。</p>
-</footer>
-
 <script>
-const OWNER_REPO = "youliboshi/course-vault";
-const REPO_URL = "https://gitee.com/" + OWNER_REPO;
-document.getElementById("repo").href = REPO_URL;
+(function () {
+  var REPO = "https://gitee.com/youliboshi/course-vault";
+  var RAW = REPO + "/raw/main/";
+  var TYPES = ["笔记", "课件", "试卷", "作业", "实验报告", "复习资料"];
+  var DATA = null;
 
-let DATA = null;
-const $ = id => document.getElementById(id);
-// 课程名/专业名来自仓库目录名，任何人提交 PR 都能新增；
-// 统一转义后再进 innerHTML，避免目录名里的标签被执行。
-function esc(s){
-  return String(s == null ? "" : s)
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
-}
-
-function enc(p){ return p.split("/").map(encodeURIComponent).join("/"); }
-
-function courseUrl(college, major, course){
-  if (college === "公共课") return REPO_URL + "/tree/main/courses/公共课/" + encodeURIComponent(course);
-  return REPO_URL + "/tree/main/courses/专业课/" + encodeURIComponent(college)
-       + "/" + encodeURIComponent(major) + "/" + encodeURIComponent(course);
-}
-function uploadUrl(college){
-  // 国内镜像：直接用自建上传页（三级下拉 + 拖拽）
-  if (!ON_PAGES) return "upload.html";
-  const tpl = college === "公共课" ? "上传资料-公共课.yml" : "上传资料-" + college + ".yml";
-  return REPO_URL + "/issues/new?template=" + encodeURIComponent(tpl);
-}
-
-function showCard(college, major, course){
-  $("list").innerHTML = "";
-  const path = college === "公共课" ? "公共课" : college + " · " + major;
-  $("result").innerHTML =
-    '<div class="card">' +
-      '<div class="name">' + esc(course) + '</div>' +
-      '<div class="path">' + esc(path) + '</div>' +
-      '<div class="btns">' +
-        '<a class="btn primary" href="' + courseUrl(college, major, course) + '">去这门课的资料页</a>' +
-        '<a class="btn ghost" href="' + uploadUrl(college) + '">传资料到这</a>' +
-      '</div>' +
-      '<div class="hint">传资料时：学院、专业、课程在下一步的页面上直接选，不用手写。</div>' +
-    '</div>';
-}
-
-function fillColleges(){
-  const sel = $("college");
-  DATA.colleges.forEach(c => {
-    const o = document.createElement("option");
-    o.value = c.name; o.textContent = c.name; sel.appendChild(o);
-  });
-  const o = document.createElement("option");
-  o.value = "公共课"; o.textContent = "公共课（全校通用）"; sel.appendChild(o);
-}
-
-function onCollege(){
-  const college = $("college").value;
-  const mj = $("major"), cs = $("course");
-  mj.innerHTML = ""; cs.innerHTML = "";
-  $("result").innerHTML = ""; $("list").innerHTML = "";
-  if (!college){ mj.disabled = true; cs.disabled = true;
-    mj.innerHTML = '<option value="">先选学院</option>';
-    cs.innerHTML = '<option value="">先选专业</option>'; return; }
-  if (college === "公共课"){
-    mj.innerHTML = '<option value="公共课">公共课</option>';
-    mj.disabled = true;
-    cs.disabled = false;
-    cs.innerHTML = '<option value="">请选择课程</option>';
-    DATA.public.forEach(c => {
-      const o = document.createElement("option"); o.value = c; o.textContent = c; cs.appendChild(o);
-    });
-    return;
+  function $(id) { return document.getElementById(id); }
+  var AMP = String.fromCharCode(38), QUOT = String.fromCharCode(34);
+  function esc(s) {
+    return String(s == null ? "" : s)
+      .split(AMP).join(AMP + "amp;")
+      .split("<").join(AMP + "lt;")
+      .split(">").join(AMP + "gt;")
+      .split(QUOT).join(AMP + "quot;");
   }
-  mj.disabled = false;
-  mj.innerHTML = '<option value="">请选择专业</option>';
-  const c = DATA.colleges.find(x => x.name === college);
-  c.majors.forEach(m => {
-    const o = document.createElement("option"); o.value = m.name; o.textContent = m.name; mj.appendChild(o);
-  });
-  cs.disabled = true;
-  cs.innerHTML = '<option value="">先选专业</option>';
-}
+  function encPath(p) { return p.split("/").map(encodeURIComponent).join("/"); }
+  function rawUrl(c, f) { return RAW + encPath(c.p + "/" + f.t + "/" + f.n); }
+  function courseUrl(c) { return "#/c/" + encodeURIComponent(c.p); }
+  function giteeDirUrl(c) { return REPO + "/tree/main/" + encPath(c.p); }
+  function sizeText(n) {
+    if (!n && n !== 0) return "";
+    if (n < 1024) return n + " B";
+    if (n < 1024 * 1024) return (n / 1024).toFixed(0) + " KB";
+    return (n / 1024 / 1024).toFixed(1) + " MB";
+  }
+  function pathText(c) {
+    return c.m ? (c.c + " › " + c.m) : "公共课";
+  }
+  function mark(text, key) {
+    var safe = esc(text);
+    if (!key) return safe;
+    var i = safe.toLowerCase().indexOf(esc(key).toLowerCase());
+    if (i < 0) return safe;
+    var len = esc(key).length;
+    return safe.slice(0, i) + "<mark>" + safe.slice(i, i + len) + "</mark>" + safe.slice(i + len);
+  }
 
-function onMajor(){
-  const college = $("college").value, mj = $("major").value;
-  const cs = $("course");
-  cs.innerHTML = ""; $("result").innerHTML = ""; $("list").innerHTML = "";
-  if (!college || !mj){ cs.disabled = true; cs.innerHTML = '<option value="">先选专业</option>'; return; }
-  const c = DATA.colleges.find(x => x.name === college);
-  const m = c.majors.find(x => x.name === mj);
-  cs.disabled = false;
-  cs.innerHTML = '<option value="">请选择课程</option>';
-  m.courses.forEach(k => {
-    const o = document.createElement("option"); o.value = k; o.textContent = k; cs.appendChild(o);
-  });
-}
+  /* ---------- 数据加载 ---------- */
+  fetch("data/search.json", { cache: "no-store" })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      DATA = d;
+      var cc = d.counts || {};
+      $("stats").textContent = (cc.colleges || 0) + " 个学院 · " +
+        (cc.courses || 0) + " 门课 · " + (cc.files || 0) + " 份资料";
+      fillColleges();
+      route();
+      // 支持 ?q=关键词 直接落到搜索结果（方便分享/收藏一个搜索）
+      var kw = new URLSearchParams(location.search).get("q");
+      if (kw) { $("q").value = kw; doSearch(); }
+    })
+    .catch(function () {
+      $("stats").textContent = "数据加载失败，请下拉刷新重试";
+    });
 
-function search(q){
-  q = q.trim().toLowerCase();
-  $("result").innerHTML = "";
-  if (!q){ $("list").innerHTML = ""; return; }
-  const hits = [];
-  // 搜索同时匹配「学院 + 专业 + 课程名」，这样搜「计算机」「医学院」也能命中。
-  DATA.colleges.forEach(c => c.majors.forEach(m => m.courses.forEach(k => {
-    const haystack = (c.name + " " + m.name + " " + k).toLowerCase();
-    if (haystack.includes(q)) hits.push({college:c.name, major:m.name, course:k});
-  })));
-  DATA.public.forEach(k => {
-    const haystack = ("公共课 " + k).toLowerCase();
-    if (haystack.includes(q)) hits.push({college:"公共课", major:"", course:k});
-  });
-  if (!hits.length){ $("list").innerHTML = '<li class="empty">没有匹配的课程。可能还没建目录，去仓库开个 Issue 说一声。</li>'; return; }
-  const max = 40;
-  $("list").innerHTML = hits.slice(0, max).map(h => {
-    const path = h.college === "公共课" ? "公共课" : h.college + " · " + h.major;
-    return '<li><a href="' + courseUrl(h.college, h.major, h.course) + '">' +
-      '<span>' + esc(h.course) + '</span><div class="p">' + esc(path) + '</div></a></li>';
-  }).join("") + (hits.length > max ? '<li class="empty">还有 ' + (hits.length - max) + ' 条，请输入更具体的关键词。</li>' : '');
-}
+  /* ---------- 学院三级下拉 ---------- */
+  function fillColleges() {
+    var seen = {}, cols = [];
+    DATA.courses.forEach(function (c) {
+      if (c.c === "公共课") return;
+      if (!seen[c.c]) { seen[c.c] = 1; cols.push(c.c); }
+    });
+    cols.sort();
+    var sel = $("college");
+    cols.forEach(function (n) {
+      var o = document.createElement("option");
+      o.value = n; o.textContent = n; sel.appendChild(o);
+    });
+    var pubs = DATA.courses.filter(function (c) { return c.c === "公共课"; });
+    if (pubs.length) {
+      var og = document.createElement("option");
+      og.value = "__public__"; og.textContent = "公共课（" + pubs.length + " 门）";
+      sel.appendChild(og);
+    }
+    sel.addEventListener("change", function () {
+      var v = sel.value, ms = $("major"), cs = $("course");
+      ms.innerHTML = ""; cs.innerHTML = "";
+      cs.disabled = true;
+      cs.innerHTML = '<option value="">先选专业</option>';
+      if (v === "__public__") {
+        ms.disabled = true;
+        ms.innerHTML = '<option value="">（公共课无专业）</option>';
+        cs.disabled = false;
+        cs.innerHTML = '<option value="">请选择课程</option>';
+        pubs.forEach(function (c) { addOpt(cs, c.n, c.p); });
+        return;
+      }
+      ms.disabled = false;
+      ms.innerHTML = '<option value="">请选择专业</option>';
+      var majors = {};
+      DATA.courses.forEach(function (c) {
+        if (c.c === v && c.m && !majors[c.m]) majors[c.m] = 1;
+      });
+      Object.keys(majors).sort().forEach(function (m) { addOpt(ms, m, m); });
+    });
+    $("major").addEventListener("change", function () {
+      var m = this.value, cs = $("course");
+      if (!m) return;
+      cs.disabled = false;
+      cs.innerHTML = '<option value="">请选择课程</option>';
+      DATA.courses.forEach(function (c) {
+        if (c.c === sel.value && c.m === m) addOpt(cs, c.n, c.p);
+      });
+    });
+    $("course").addEventListener("change", function () {
+      var p = this.value;
+      if (!p) return;
+      location.hash = "#/c/" + encodeURIComponent(p);
+    });
+  }
+  function addOpt(sel, text, value) {
+    var o = document.createElement("option");
+    o.value = value; o.textContent = text; sel.appendChild(o);
+  }
 
-fetch("./data/courses.json").then(r => r.json()).then(d => {
-  DATA = d;
-  const c = d.counts;
-  $("stats").textContent = c.colleges + " 个学院 · " + c.majors + " 个专业 · " + c.courses + " 门课";
-  fillColleges();
-  $("college").addEventListener("change", onCollege);
-  $("major").addEventListener("change", onMajor);
-  $("course").addEventListener("change", e => {
-    if (!e.target.value) return;
-    showCard($("college").value, $("major").value, e.target.value);
-  });
-  let t = null;
-  $("q").addEventListener("input", e => {
-    clearTimeout(t);
-    const v = e.target.value;
-    t = setTimeout(() => search(v), 160);
-  });
-}).catch(err => {
-  $("stats").textContent = "数据加载失败，请刷新或直接进仓库";
-});
+  /* ---------- 全站搜索（课程 + 资料） ---------- */
+  function doSearch() {
+    var key = $("q").value.trim();
+    var box = $("results");
+    if (!key) {
+      box.innerHTML = "";
+      $("browse").style.display = "";
+      return;
+    }
+    $("browse").style.display = "none";
+
+    var courses = [], files = [];
+    DATA.courses.forEach(function (c) {
+      var label = pathText(c) + " " + c.n;
+      if (label.toLowerCase().indexOf(key.toLowerCase()) >= 0) courses.push(c);
+      c.f.forEach(function (f) {
+        if (f.n.toLowerCase().indexOf(key.toLowerCase()) >= 0) {
+          files.push({ c: c, f: f });
+        }
+      });
+    });
+
+    var html = "";
+    if (courses.length) {
+      html += '<div class="grp">课程（' + courses.length + '）</div>';
+      courses.slice(0, 40).forEach(function (c) {
+        html += '<a class="item" href="' + courseUrl(c) + '">' +
+          '<span class="act">进入 ›</span>' +
+          '<div class="n">' + mark(c.n, key) + '</div>' +
+          '<div class="m">' + esc(pathText(c)) + ' · ' + c.f.length + ' 份资料</div></a>';
+      });
+      if (courses.length > 40) html += '<div class="empty">只显示前 40 门，换个更具体的关键词</div>';
+    }
+    if (files.length) {
+      html += '<div class="grp">资料（' + files.length + '）</div>';
+      files.slice(0, 60).forEach(function (it) {
+        html += '<a class="item" href="' + rawUrl(it.c, it.f) + '" target="_blank" rel="noopener">' +
+          '<span class="act">下载</span>' +
+          '<div class="n">' + mark(it.f.n, key) + '</div>' +
+          '<div class="m">' + esc(pathText(it.c) + " › " + it.c.n + " › " + it.f.t) +
+          ' · ' + sizeText(it.f.s) + '</div></a>';
+      });
+    }
+    if (!courses.length && !files.length) {
+      html = '<div class="empty">没有找到「' + esc(key) + '」。<br>' +
+        '试试课程名的一部分（如「解剖」），或去 <a href="' + REPO + '">仓库首页</a> 按目录翻。</div>';
+    }
+    box.innerHTML = html;
+  }
+  $("q").addEventListener("input", function () { if (!this.value.trim()) doSearch(); });
+  $("q").addEventListener("keydown", function (e) { if (e.key === "Enter") { doSearch(); this.blur(); } });
+  $("go").addEventListener("click", function () { doSearch(); });
+
+  /* ---------- 课程详情（含本课小搜索） ---------- */
+  function showCourse(c) {
+    $("home").style.display = "none";
+    var box = $("courseview");
+    box.style.display = "";
+
+    var crumb = '<a href="#/">首页</a> › ' + esc(pathText(c)) + ' › ' + esc(c.n);
+    var head = '<div class="crumb">' + crumb + '</div>' +
+      '<div class="cname">' + esc(c.n) + '</div>' +
+      '<div class="tags"><span class="tag">' + c.f.length + ' 份资料</span>' +
+      '<a class="tag" href="' + giteeDirUrl(c) + '" target="_blank" rel="noopener">在仓库里打开</a></div>' +
+      '<div class="searchbar"><input id="cq" type="search" placeholder="在这门课里搜资料（如 第一章 / 期末）" autocomplete="off">' +
+      '<button id="cgo">搜索</button></div>' +
+      '<div id="clist"></div>';
+    box.innerHTML = head;
+
+    function render(key) {
+      var groups = {}, total = 0;
+      c.f.forEach(function (f) {
+        if (key && (f.n.toLowerCase().indexOf(key.toLowerCase()) < 0 &&
+                    f.t.toLowerCase().indexOf(key.toLowerCase()) < 0)) return;
+        (groups[f.t] = groups[f.t] || []).push(f);
+        total++;
+      });
+      var html = "";
+      if (!total) {
+        html = '<div class="empty">' + (key ? '这门课里没有匹配的资料' :
+          '这门课还没有资料，欢迎第一个上传') +
+          '<br><a href="upload.html">去上传</a></div>';
+      }
+      TYPES.forEach(function (t) {
+        var arr = groups[t];
+        if (!arr) return;
+        html += '<div class="grp">' + t + '（' + arr.length + '）</div>';
+        arr.forEach(function (f) {
+          html += '<a class="item" href="' + rawUrl(c, f) + '" target="_blank" rel="noopener">' +
+            '<span class="act">下载</span>' +
+            '<div class="n">' + mark(f.n, key) + '</div>' +
+            '<div class="m">' + t + ' · ' + sizeText(f.s) + '</div></a>';
+        });
+      });
+      if (!key && total) {
+        var empty = TYPES.filter(function (t) { return !groups[t]; });
+        if (empty.length) {
+          html += '<div class="note" style="text-align:left;margin-top:14px">还没有：' +
+            esc(empty.join(" / ")) + '　<a href="upload.html" style="color:var(--pink)">传一份</a></div>';
+        }
+      }
+      $("clist").innerHTML = html;
+    }
+    render("");
+    $("cq").addEventListener("input", function () { render(this.value.trim()); });
+    $("cq").addEventListener("keydown", function (e) { if (e.key === "Enter") { this.blur(); } });
+    $("cgo").addEventListener("click", function () { render($("cq").value.trim()); });
+    window.scrollTo(0, 0);
+  }
+
+  /* ---------- 路由 ---------- */
+  function route() {
+    if (!DATA) return;
+    var h = location.hash || "";
+    if (h.indexOf("#/c/") === 0) {
+      var p = decodeURIComponent(h.slice(4));
+      var c = DATA.courses.filter(function (x) { return x.p === p; })[0];
+      if (c) return showCourse(c);
+    }
+    $("courseview").style.display = "none";
+    $("home").style.display = "";
+  }
+  window.addEventListener("hashchange", route);
+})();
 </script>
 </body>
 </html>
