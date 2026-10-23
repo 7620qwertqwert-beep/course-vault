@@ -194,6 +194,24 @@ class ImportIssueTest(unittest.TestCase):
             self.assertIn(label, imp._parse_sections(make_body()))
         self.assertIn(imp.CONFIRM_REQUIREMENT, form_text)
 
+    def test_form_uses_free_text_for_college_and_major(self):
+        form_text = (
+            REPO_ROOT / ".github" / "ISSUE_TEMPLATE" / "上传资料.yml"
+        ).read_text(encoding="utf-8")
+        for field_id in ("college", "major"):
+            self.assertRegex(
+                form_text,
+                r"(?ms)^\s*- type: input\s*\n\s*id: {}\b".format(field_id),
+                "字段 {} 应改为 input".format(field_id),
+            )
+        for field_id in ("category", "year", "material_type"):
+            self.assertRegex(
+                form_text,
+                r"(?ms)^\s*- type: dropdown\s*\n\s*id: {}\b".format(field_id),
+                "字段 {} 应保持 dropdown".format(field_id),
+            )
+        self.assertIn("写错不要紧，提交后机器人会告诉你正确写法", form_text)
+
     # ---------- 失败路径 ----------
 
     def test_course_not_found_exits_2(self):
@@ -201,6 +219,37 @@ class ImportIssueTest(unittest.TestCase):
         code, out, _ = self.run_main("--dry-run")
         self.assertEqual(code, 2)
         self.assertIn("课程目录不存在", out)
+
+    def test_unknown_college_suggests_closest(self):
+        self.write_body(make_body(college="医学完"))
+        code, out, _ = self.run_main("--dry-run")
+        self.assertEqual(code, 2)
+        self.assertIn("找不到学院", out)
+        self.assertIn("医学院", out)
+
+    def test_unknown_course_suggests_closest(self):
+        self.write_body(make_body(course="康复医学概伦"))
+        code, out, _ = self.run_main("--dry-run")
+        self.assertEqual(code, 2)
+        self.assertIn("康复医学概论", out)
+
+    def test_unknown_major_suggests_candidates_with_college(self):
+        self.write_body(make_body(major="闹鬼学"))
+        code, out, _ = self.run_main("--dry-run")
+        self.assertEqual(code, 2)
+        self.assertIn("找不到专业", out)
+        self.assertIn("医学院·康复治疗学", out)
+
+    def test_ambiguous_bare_major_is_rejected(self):
+        for college in ("商学院", "国际教育学院"):
+            (self.courses / "专业课" / college / "经济学").mkdir(
+                parents=True, exist_ok=True
+            )
+        body = make_body(major="经济学")
+        with self.assertRaises(imp.ImportFailure) as ctx:
+            imp._parse_form("", body)
+        self.assertIn("商学院·经济学", str(ctx.exception))
+        self.assertIn("国际教育学院·经济学", str(ctx.exception))
 
     def test_illegal_course_components_are_rejected(self):
         for name in ("a/b", "..", "a\x00b", "a\\b", " a", "a ", ".", "a:b"):
@@ -213,16 +262,67 @@ class ImportIssueTest(unittest.TestCase):
         with self.assertRaises(imp.ImportFailure):
             imp._parse_form("", body)
 
-    def test_course_name_with_leading_space_fails(self):
-        self.write_body(make_body(course=" 康复医学概论"))
+    def test_course_name_with_surrounding_spaces_is_trimmed(self):
+        self.write_body(make_body(course="  康复医学概论\u3000"))
         code, out, _ = self.run_main("--dry-run")
-        self.assertEqual(code, 2)
-        self.assertIn("空格", out)
+        self.assertEqual(code, 0, out)
+        self.assertIn("课程名称：康复医学概论", out)
+        self.assertIn(
+            "courses/专业课/医学院/康复治疗学/康复医学概论/笔记", out
+        )
+
+    def test_bare_major_resolves_unique(self):
+        body = make_body(major="康复治疗学")
+        form = imp._parse_form("", body)
+        self.assertEqual(form["college"], "医学院")
+        self.assertEqual(form["major"], "康复治疗学")
+
+    def test_blank_college_is_derived_from_unique_major(self):
+        body = make_body(college="_No response_", major="康复治疗学")
+        form = imp._parse_form("", body)
+        self.assertEqual(form["college"], "医学院")
+        self.assertEqual(form["major"], "康复治疗学")
+
+    def test_major_accepts_slash_and_spaced_separator(self):
+        for major in ("医学院/康复治疗学", "医学院 · 康复治疗学"):
+            with self.subTest(major=major):
+                form = imp._parse_form("", make_body(major=major))
+                self.assertEqual(form["college"], "医学院")
+                self.assertEqual(form["major"], "康复治疗学")
+
+    def test_college_with_parenthetical_is_normalized(self):
+        course = (
+            self.courses
+            / "专业课"
+            / "计算机与信息技术学院"
+            / "软件工程"
+            / "软件工程导论"
+        )
+        for subdir in ("笔记", "课件", "试卷", "作业"):
+            (course / subdir).mkdir(parents=True, exist_ok=True)
+        (course / "README.md").write_text("# 软件工程导论\n", encoding="utf-8")
+
+        self.write_body(
+            make_body(
+                college="计算机与信息技术学院（软件学院）",
+                major="软件工程",
+                course="软件工程导论",
+            )
+        )
+        code, out, _ = self.run_main("--dry-run")
+        self.assertEqual(code, 0, out)
+        self.assertIn("开课学院：计算机与信息技术学院", out)
+        self.assertIn(
+            "courses/专业课/计算机与信息技术学院/软件工程/软件工程导论/笔记",
+            out,
+        )
 
     def test_illegal_major_component_is_rejected(self):
-        body = make_body(major="医学院·../逃逸")
-        with self.assertRaises(imp.ImportFailure):
-            imp._parse_form("", body)
+        for major in ("医学院·../逃逸", "医学院/../逃逸", "../康复治疗学"):
+            with self.subTest(major=major):
+                body = make_body(major=major)
+                with self.assertRaises(imp.ImportFailure):
+                    imp._parse_form("", body)
 
     # ---------- 类型映射 ----------
 
