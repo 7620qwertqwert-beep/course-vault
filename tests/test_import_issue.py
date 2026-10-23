@@ -127,7 +127,7 @@ class ImportIssueTest(unittest.TestCase):
         self.course = (
             self.courses / "专业课" / "医学院" / "康复治疗学" / "康复医学概论"
         )
-        for subdir in ("笔记", "课件", "试卷", "作业"):
+        for subdir in ("笔记", "课件", "试卷", "作业", "实验报告", "复习资料"):
             (self.course / subdir).mkdir(parents=True, exist_ok=True)
         (self.course / "README.md").write_text("# 康复医学概论\n", encoding="utf-8")
 
@@ -167,7 +167,7 @@ class ImportIssueTest(unittest.TestCase):
     def add_course(self, college, major, course):
         """在临时课程树里补一门专业课，返回课程目录。"""
         path = self.courses / "专业课" / college / major / course
-        for subdir in ("笔记", "课件", "试卷", "作业"):
+        for subdir in ("笔记", "课件", "试卷", "作业", "实验报告", "复习资料"):
             (path / subdir).mkdir(parents=True, exist_ok=True)
         (path / "README.md").write_text(
             "# {}\n".format(course), encoding="utf-8"
@@ -177,7 +177,7 @@ class ImportIssueTest(unittest.TestCase):
     def add_public_course(self, course):
         """在临时课程树里补一门公共课，返回课程目录。"""
         path = self.courses / "公共课" / course
-        for subdir in ("笔记", "课件", "试卷", "作业"):
+        for subdir in ("笔记", "课件", "试卷", "作业", "实验报告", "复习资料"):
             (path / subdir).mkdir(parents=True, exist_ok=True)
         (path / "README.md").write_text(
             "# {}\n".format(course), encoding="utf-8"
@@ -196,6 +196,60 @@ class ImportIssueTest(unittest.TestCase):
         self.assertEqual(form["type"], "笔记")
         self.assertEqual(len(form["attachments"]), 1)
         self.assertEqual(form["attachments"][0]["url"], FAKE_ATTACHMENT_URL)
+
+    def test_year_term_accepts_manual_formats(self):
+        cases = {
+            "2025秋": "2025秋",
+            "2025 秋": "2025秋",
+            "2025年秋": "2025秋",
+            "2025年秋季": "2025秋",
+            "2025秋季": "2025秋",
+            "2025-2026秋": "2025秋",
+            "2025-2026学年秋": "2025秋",
+            "25秋": "2025秋",
+        }
+        for raw, expected in cases.items():
+            with self.subTest(raw=raw):
+                self.assertEqual(imp._year_term(raw, ""), expected)
+                self.assertEqual(
+                    imp._parse_form("", make_body(year=raw))["year"],
+                    expected,
+                )
+
+    def test_year_term_accepts_spring_and_autumn_words(self):
+        spring = {
+            "2025春": "2025春",
+            "2025春季": "2025春",
+            "2025上": "2025春",
+            "2025上学期": "2025春",
+            "25春": "2025春",
+        }
+        autumn = {
+            "2025秋": "2025秋",
+            "2025秋季": "2025秋",
+            "2025下": "2025秋",
+            "2025下学期": "2025秋",
+            "25秋": "2025秋",
+        }
+        for raw, expected in list(spring.items()) + list(autumn.items()):
+            with self.subTest(raw=raw):
+                self.assertEqual(imp._year_term(raw, ""), expected)
+
+    def test_year_term_rejects_unknown_format_with_clear_hint(self):
+        for raw in ("2025夏", "2025", "秋", "2025年"):
+            with self.subTest(raw=raw):
+                with self.assertRaises(imp.ImportFailure) as ctx:
+                    imp._year_term(raw, "")
+                self.assertIn(
+                    "年份学期要写成 2025秋 这种格式",
+                    str(ctx.exception),
+                )
+
+    def test_year_term_legacy_other_option_falls_back_to_body(self):
+        self.assertEqual(imp._year_term("其他", "正文：2024春季使用"), "2024春")
+        self.assertEqual(imp._year_term("其他 2023秋", ""), "2023秋")
+        with self.assertRaises(imp.ImportFailure):
+            imp._year_term("其他", "正文没有写学期")
 
     def test_parse_public_course_ignores_empty_college_and_major(self):
         body = make_body(
@@ -766,7 +820,7 @@ class ImportIssueTest(unittest.TestCase):
             / "软件工程"
             / "软件工程导论"
         )
-        for subdir in ("笔记", "课件", "试卷", "作业"):
+        for subdir in ("笔记", "课件", "试卷", "作业", "实验报告", "复习资料"):
             (course / subdir).mkdir(parents=True, exist_ok=True)
         (course / "README.md").write_text("# 软件工程导论\n", encoding="utf-8")
 
@@ -800,10 +854,11 @@ class ImportIssueTest(unittest.TestCase):
             "课件": "课件",
             "试卷": "试卷",
             "作业": "作业",
-            "实验报告": "作业",
-            "复习资料": "试卷",
+            "实验报告": "实验报告",
+            "复习资料": "复习资料",
             "其他": "笔记",
         }
+        course_rel = "courses/专业课/医学院/康复治疗学/康复医学概论"
         for form_type, directory in expected.items():
             with self.subTest(form_type=form_type):
                 self.assertEqual(imp.TYPE_TO_DIR[form_type], directory)
@@ -811,6 +866,10 @@ class ImportIssueTest(unittest.TestCase):
                     imp._parse_form("", make_body(material_type=form_type))["type"],
                     form_type,
                 )
+                self.write_body(make_body(material_type=form_type))
+                code, out, _ = self.run_main("--dry-run")
+                self.assertEqual(code, 0, out)
+                self.assertIn("{}/{}".format(course_rel, directory), out)
         self.assertEqual(imp.TYPE_TO_FILENAME["实验报告"], "实验报告")
         self.assertEqual(imp.TYPE_TO_FILENAME["复习资料"], "复习")
         self.assertEqual(imp.TYPE_TO_FILENAME["试卷"], "期末")

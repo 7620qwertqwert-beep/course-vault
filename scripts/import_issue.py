@@ -73,8 +73,9 @@ TYPE_TO_DIR = {
     "课件": "课件",
     "试卷": "试卷",
     "作业": "作业",
-    "实验报告": "作业",
-    "复习资料": "试卷",
+    "实验报告": "实验报告",
+    "复习资料": "复习资料",
+    # 历史 Issue 里可能还留着「其他」；保留兼容，统一落到笔记。
     "其他": "笔记",
 }
 
@@ -779,9 +780,38 @@ def _resolve_inside_courses(parts):
     return resolved
 
 
+# 手填年份学期允许的写法：2025秋 / 2025 秋 / 2025年秋 / 2025年秋季 /
+# 2025秋季 / 2025-2026秋 / 2025-2026学年秋 / 25秋。
+# 学期词统一归一成「春」「秋」，年份统一成 20xx。
+YEAR_TERM_RE = re.compile(
+    r"^(?P<year>20\d{2}|\d{2})\s*年?\s*"
+    r"(?:[-~—–至]\s*(?:20\d{2}|\d{2})\s*年?\s*(?:学年)?\s*)?"
+    r"(?P<term>春|春季|上|上学期|秋|秋季|下|下学期)$"
+)
+SPRING_TERMS = {"春", "春季", "上", "上学期"}
+AUTUMN_TERMS = {"秋", "秋季", "下", "下学期"}
+
+
+def _normalize_year_term(text):
+    """把一行手填年份学期归一成「20xx春/20xx秋」；失败返回 None。"""
+    match = YEAR_TERM_RE.fullmatch(text)
+    if not match:
+        return None
+    year = match.group("year")
+    if len(year) == 2:
+        year = "20" + year
+    term = match.group("term")
+    if term in SPRING_TERMS:
+        return year + "春"
+    if term in AUTUMN_TERMS:
+        return year + "秋"
+    return None
+
+
 def _year_term(raw, body):
     value = _single_line(raw, "年份学期")
     if value.startswith("其他"):
+        # 历史 Issue 的「其他」兜底：从字段值或正文里找 20xx春/秋。
         match = re.search(r"(20\d{2})\s*年?\s*(春|秋)", value)
         if not match:
             match = re.search(r"(20\d{2})\s*年?\s*(春|秋)", body)
@@ -791,9 +821,13 @@ def _year_term(raw, body):
                 "请在附件框的说明文字里补上。"
             )
         return match.group(1) + match.group(2)
-    if re.fullmatch(r"20\d{2}[春秋]", value):
-        return value
-    _fail("年份学期格式不正确：{}；应为 2025秋 这类格式。".format(value))
+    normalized = _normalize_year_term(value)
+    if normalized is not None:
+        return normalized
+    _fail(
+        "年份学期格式不正确：{}；年份学期要写成 2025秋 这种格式"
+        "（例如 2025春、2025秋季、2025-2026秋、25秋）。".format(value)
+    )
 
 
 def _parse_form(title, body):
@@ -1020,7 +1054,9 @@ def _target_directory(form):
     if not target_dir.is_dir():
         _fail(
             "资料目录不存在：{}。该课程目录结构不完整，请联系维护者补建"
-            "笔记/课件/试卷/作业 四个子目录。".format(_relative(target_dir))
+            "笔记/课件/试卷/作业/实验报告/复习资料 六个子目录。".format(
+                _relative(target_dir)
+            )
         )
 
     # 再兜底检查一次：任何情况下都不能跑到 courses/ 外面。

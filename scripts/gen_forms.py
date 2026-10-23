@@ -3,9 +3,9 @@
 """按 courses/ 的真实目录生成 GitHub Issue Forms 模板。
 
 模板粒度是「学院」：每个学院一个独立模板，进去后「开课学院」已预填；
-「所属专业」是本学院的专业下拉，「课程名称」是本学院全部课程的下拉，
-每项写成「专业 · 课程名」，学生按「学院 → 专业 → 课程」的顺序逐层选。
-公共课单独一个模板，课程下拉就是 courses/公共课/ 下的全部课程。
+「所属专业」是本学院的专业下拉，「课程名称」是手填输入框，写成
+「专业 · 课程名」最好认，只写课程名也能自动核对。
+公共课单独一个模板，「课程名称」同样是手填输入框。
 通用兜底模板 上传资料.yml 是手写的，本脚本只校验、不覆盖。
 
 用法：
@@ -18,8 +18,7 @@
   * 文件名格式为 上传资料-<学院>.yml；文件名里不出现「·」和空格，
     目录名中的「·」、空白、斜杠会被替换为「-」。
   * 学院模板的「所属专业」是 dropdown，选项严格等于该学院下的专业目录；
-    「课程名称」也是 dropdown，选项是本学院「专业 · 课程名」的全组合
-    （先按专业、再按课程名排序），不添加「其他/手填」项。
+    「课程名称」是 input，由学生照课程目录手填（可写「专业 · 课程名」）。
   * 生成后立即做结构自检：模板数量、字段顺序、id 集合、选项集合与格式、
     控件类型、required、文件名规则等任何一项不符都会报错退出。
   * 每个模板都保留「课程类别」字段，因为 import_issue.py 按 label 解析时
@@ -44,8 +43,7 @@ GENERIC_TEMPLATE_NAME = "上传资料.yml"
 GENERATED_PREFIX = "上传资料-"
 
 OTHER_OPTION = "其他（在下面写）"
-YEARS = ["2024秋", "2025春", "2025秋", "2026春", "2026秋", "其他"]
-MATERIAL_TYPES = ["笔记", "课件", "试卷", "作业", "实验报告", "复习资料", "其他"]
+MATERIAL_TYPES = ["笔记", "课件", "试卷", "作业", "实验报告", "复习资料"]
 CONFIRM_ITEM = "文件里不含本人或他人的姓名、学号、手机号、身份证号"
 
 ATTACHMENT_DESCRIPTION = (
@@ -55,19 +53,30 @@ ATTACHMENT_DESCRIPTION = (
 ATTACHMENT_PLACEHOLDER = (
     "把文件拖进来后，GitHub 会自动生成类似下面的链接，请不要删掉：\n"
     "[我的笔记.pdf](https://github.com/user-attachments/assets/...)\n"
-    "选「其他」年份学期时，也请在这里写清 20xx春 / 20xx秋。"
+    "年份学期请写成 20xx春 / 20xx秋（例：2025秋）。"
 )
 
-COLLEGE_TEMPLATE_DESCRIPTION = "学院已填好，先选专业，再选课程。"
+YEAR_DESCRIPTION = (
+    "填成 20xx + 春/秋，例如 2023春、2025秋、2026秋。填你实际上课的那个学期。"
+)
+YEAR_PLACEHOLDER = "2025秋"
+MATERIAL_TYPE_DESCRIPTION = (
+    "决定资料放进课程下哪个文件夹："
+    "笔记/课件/试卷/作业/实验报告/复习资料 各有一个目录。"
+)
+
+COLLEGE_TEMPLATE_DESCRIPTION = "学院已填好，先选专业，再填课程名。"
 COLLEGE_COURSE_DESCRIPTION = (
-    "先在上一步选专业，然后在这里挑课程；每项前面是它所属的专业。"
-    "只列出本学院的课程。"
+    "照课程目录里的名字写；写成「专业 · 课程名」最好认"
+    "（例：康复治疗学 · 康复评定学），只写课程名也能自动核对。"
 )
-PUBLIC_TEMPLATE_DESCRIPTION = "课程从下拉里选；列表里没有就开个 Issue 说一声。"
+COLLEGE_COURSE_PLACEHOLDER = "康复治疗学 · 康复评定学"
+PUBLIC_TEMPLATE_DESCRIPTION = "课程名照目录手填；仓库里没有这门课就先开个 Issue。"
 PUBLIC_COURSE_DESCRIPTION = (
-    "只列出仓库里已经建好目录的公共课；列表里没有这门课，说明还没建目录"
-    "——开个 Issue 说一声。"
+    "照课程目录里的名字写，例：中国近现代史纲要；"
+    "仓库里没有这门课就先开个 Issue。"
 )
+PUBLIC_COURSE_PLACEHOLDER = "中国近现代史纲要"
 COURSE_OPTION_SEPARATOR = " · "
 
 
@@ -186,11 +195,11 @@ def _input(field_id, label, description, placeholder=None, value=None, required=
 
 
 def _year_block():
-    return _dropdown(
+    return _input(
         "year",
         "年份学期",
-        "这份资料是哪一学年、哪个学期用的；选「其他」时请在附件框写清 20xx春 / 20xx秋。",
-        YEARS,
+        YEAR_DESCRIPTION,
+        placeholder=YEAR_PLACEHOLDER,
     )
 
 
@@ -198,7 +207,7 @@ def _type_block():
     return _dropdown(
         "material_type",
         "资料类型",
-        "这份资料是什么，决定放进课程下的哪个文件夹。",
+        MATERIAL_TYPE_DESCRIPTION,
         MATERIAL_TYPES,
     )
 
@@ -259,11 +268,11 @@ def _public_template(courses):
             ["公共课"],
             default=0,
         ),
-        _dropdown(
+        _input(
             "course",
             "课程名称",
             PUBLIC_COURSE_DESCRIPTION,
-            courses,
+            placeholder=PUBLIC_COURSE_PLACEHOLDER,
         ),
         _year_block(),
         _type_block(),
@@ -299,14 +308,14 @@ def _college_template(college, majors, course_options):
         _dropdown(
             "major",
             "所属专业",
-            "先选你所在的专业，下一步的课程下拉会按这个专业核对。",
+            "先选你所在的专业，下一步填课程名时会按这个专业核对。",
             majors,
         ),
-        _dropdown(
+        _input(
             "course",
             "课程名称",
             _college_course_description(),
-            course_options,
+            placeholder=COLLEGE_COURSE_PLACEHOLDER,
         ),
         _year_block(),
         _type_block(),
@@ -413,6 +422,7 @@ def _parse_template_fields(content):
                 "label": "",
                 "description": "",
                 "value": None,
+                "placeholder": None,
                 "default": None,
                 "options": [],
                 "option_labels": [],
@@ -439,6 +449,10 @@ def _parse_template_fields(content):
         match = re.match(r"^      value: (.+?)\s*$", line)
         if match:
             current["value"] = _unquote(match.group(1))
+            continue
+        match = re.match(r"^      placeholder: (.+?)\s*$", line)
+        if match:
+            current["placeholder"] = _unquote(match.group(1))
             continue
         match = re.match(r"^      default: (.+?)\s*$", line)
         if match:
@@ -467,32 +481,6 @@ def _parse_template_fields(content):
         if not field["id"]:
             problems.append("存在没有 id 的字段（type={}）".format(field["type"]))
     return fields, problems
-
-
-def _course_option_problems(name, options, majors):
-    """校验课程选项文本必须是「<专业> · <课程名>」，且专业属于本学院。"""
-    problems = []
-    major_set = set(majors)
-    for option in options:
-        if COURSE_OPTION_SEPARATOR not in option:
-            problems.append(
-                "{}: 课程选项「{}」不是「<专业> · <课程名>」格式".format(
-                    name, option
-                )
-            )
-            continue
-        major, course = option.split(COURSE_OPTION_SEPARATOR, 1)
-        if major not in major_set:
-            problems.append(
-                "{}: 课程选项「{}」的专业前缀「{}」不在本学院专业列表里".format(
-                    name, option, major
-                )
-            )
-        if not course.strip():
-            problems.append(
-                "{}: 课程选项「{}」缺少课程名".format(name, option)
-            )
-    return problems
 
 
 def _validate_template(
@@ -558,10 +546,22 @@ def _validate_template(
 
     year = by_id.get("year")
     if year is not None:
-        if year["type"] != "dropdown" or year["options"] != YEARS:
+        if year["type"] != "input":
             problems.append(
-                "{}: 年份学期必须为 dropdown，且选项为 {}（实际 type={}，options={}）".format(
-                    name, YEARS, year["type"], year["options"]
+                "{}: 年份学期必须为 input（实际 type={}）".format(
+                    name, year["type"]
+                )
+            )
+        if year["description"] != YEAR_DESCRIPTION:
+            problems.append(
+                "{}: 年份学期 description 不正确（实际「{}」）".format(
+                    name, year["description"]
+                )
+            )
+        if year["placeholder"] != YEAR_PLACEHOLDER:
+            problems.append(
+                "{}: 年份学期 placeholder 不正确（实际「{}」）".format(
+                    name, year["placeholder"]
                 )
             )
 
@@ -592,27 +592,16 @@ def _validate_template(
             )
 
     course = by_id.get("course")
-    expected_courses = list(courses)
-    if public and not expected_courses:
-        problems.append("{}: 公共课目录为空，至少需要一门课程".format(name))
     if course is not None:
-        if course["type"] != "dropdown":
+        if course["type"] != "input":
             problems.append(
-                "{}: 课程名称必须是 dropdown（实际 {}）".format(
+                "{}: 课程名称必须是 input（实际 {}）".format(
                     name, course["type"]
                 )
             )
-        if course["options"] != expected_courses:
+        if course["options"]:
             problems.append(
-                "{}: 课程名称下拉与真实课程目录不一致（实际 {} 项，应为 {} 项）".format(
-                    name, len(course["options"]), len(expected_courses)
-                )
-            )
-        if OTHER_OPTION in course["options"]:
-            problems.append(
-                "{}: 课程名称下拉不应包含「{}」（表单做不到联动）".format(
-                    name, OTHER_OPTION
-                )
+                "{}: 课程名称是 input，不应再有下拉选项".format(name)
             )
         expected_description = (
             PUBLIC_COURSE_DESCRIPTION if public else COLLEGE_COURSE_DESCRIPTION
@@ -623,9 +612,14 @@ def _validate_template(
                     name, course["description"]
                 )
             )
-        if not public:
-            problems.extend(
-                _course_option_problems(name, course["options"], majors)
+        expected_placeholder = (
+            PUBLIC_COURSE_PLACEHOLDER if public else COLLEGE_COURSE_PLACEHOLDER
+        )
+        if course["placeholder"] != expected_placeholder:
+            problems.append(
+                "{}: 课程名称 placeholder 不正确（实际「{}」）".format(
+                    name, course["placeholder"]
+                )
             )
 
     if public:

@@ -81,13 +81,13 @@ fi
 trap 'rm -rf "$tmpdir"' 0 1 2 3 15
 
 check_course_dir() {
-  # 参数：课程目录。检查 README.md 与四个资料子目录。
+  # 参数：课程目录。检查 README.md 与六个资料子目录。
   course_dir=$1
   if [ ! -f "$course_dir/README.md" ]; then
     echo "  ⚠ 缺课程卡片: $course_dir"
     bad=$((bad + 1))
   fi
-  for subdir in 笔记 课件 试卷 作业; do
+  for subdir in 笔记 课件 试卷 作业 实验报告 复习资料; do
     if [ ! -d "$course_dir/$subdir" ]; then
       echo "  ⚠ 缺子目录: $course_dir/$subdir"
       bad=$((bad + 1))
@@ -95,7 +95,7 @@ check_course_dir() {
   done
 }
 
-echo "== 1. 检查课程目录结构（README.md + 笔记/课件/试卷/作业） =="
+echo "== 1. 检查课程目录结构（README.md + 笔记/课件/试卷/作业/实验报告/复习资料） =="
 
 # 公共课：courses/公共课/<课程>/
 : > "$tmpdir/public"
@@ -120,7 +120,7 @@ if [ -d courses/专业课 ]; then
     if [ -f "$legacy_dir/README.md" ]; then
       legacy_hit=1
     fi
-    for subdir in 笔记 课件 试卷 作业; do
+    for subdir in 笔记 课件 试卷 作业 实验报告 复习资料; do
       if [ -d "$legacy_dir/$subdir" ]; then
         legacy_hit=1
       fi

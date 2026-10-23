@@ -21,9 +21,9 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 COURSES_DIR = REPO_ROOT / "courses"
 
-# 课程类别与每门课固定创建的四个资料子目录。
+# 课程类别与每门课固定创建的六个资料子目录。
 CATEGORIES = ("公共课", "专业课")
-SUBDIRS = ("笔记", "课件", "试卷", "作业")
+SUBDIRS = ("笔记", "课件", "试卷", "作业", "实验报告", "复习资料")
 
 # 公共课的“所属专业”统一写为全校通用。
 PUBLIC_MAJOR = "全校通用"
@@ -76,7 +76,7 @@ def parse_args(argv=None):
     parser.add_argument(
         "--force",
         action="store_true",
-        help="覆盖已存在的 README.md（不会删除 笔记/课件/试卷/作业 中的资料）",
+        help="覆盖已存在的 README.md（不会删除 笔记/课件/试卷/作业/实验报告/复习资料 中的资料）",
     )
     return parser.parse_args(argv)
 
@@ -409,7 +409,7 @@ def main(argv=None):
     data = _collect_course_data(course_name, category, college, profession)
 
     try:
-        # 四个资料子目录：已存在时直接复用，不删除任何已有文件。
+        # 六个资料子目录：已存在时直接复用，不删除任何已有文件。
         # 每个子目录放入空 .gitkeep，保证空目录也能被 git 跟踪。
         for subdir in SUBDIRS:
             subdir_path = course_dir / subdir
