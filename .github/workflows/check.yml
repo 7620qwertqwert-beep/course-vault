@@ -165,7 +165,7 @@ jobs:
             [ -n "$f" ] || continue
             case "$f" in
               courses/*|INDEX.md) ;;
-              .github/*|scripts/*|tests/*|_template/*|README.md|CONTRIBUTING.md|docs/*)
+              .github/*|scripts/*|tests/*|_template/*|README.md|CONTRIBUTING.md|TAKEDOWN.md|LICENSE|docs/*)
                 if [ "${PR_AUTHOR:-}" = "${OWNER_LOGIN:-}" ]; then
                   echo "::warning file=$f::维护者本人修改治理文件，放行（本次 CI 仍使用 base 分支脚本，改动自下一个 PR 起生效）"
                 else
@@ -206,6 +206,18 @@ jobs:
           if [ "$dup" -gt 0 ]; then
             echo "::warning::发现 $dup 组内容完全相同的文件，可能重复上传，请人工确认"
           fi
+
+      # ---------- 5.5 站点数据与单元测试 ----------
+      - name: 站点数据一致性（courses.json）
+        shell: bash
+        run: |
+          set -eu
+          python3 scripts/gen_site_data.py --check
+      - name: 单元测试
+        shell: bash
+        run: |
+          set -eu
+          python3 -m unittest discover -s tests
 
       # ---------- 6. 汇总 ----------
       - name: 检查完成

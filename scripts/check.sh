@@ -185,7 +185,7 @@ fi
 
 echo "== 4. 检查文本文件中的疑似个人信息 =="
 find courses -type f \( -name '*.md' -o -name '*.txt' \) \
-  -exec grep -lE '学号[:：][0-9]{6,}|身份证|[0-9]{17}[0-9Xx]' {} + \
+  -exec grep -lE '学号[:：][0-9]{6,}|身份证|[0-9]{17}[0-9Xx]|(^|[^0-9])1[3-9][0-9]{9}([^0-9]|$)' {} + \
   2>/dev/null | sort > "$tmpdir/privacy"
 if [ -s "$tmpdir/privacy" ]; then
   while IFS= read -r file; do

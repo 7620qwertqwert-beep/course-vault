@@ -89,6 +89,13 @@ document.getElementById("repo").href = REPO_URL;
 
 let DATA = null;
 const $ = id => document.getElementById(id);
+// 课程名/专业名来自仓库目录名，任何人提交 PR 都能新增；
+// 统一转义后再进 innerHTML，避免目录名里的标签被执行。
+function esc(s){
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, """).replace(/'/g, "&#39;");
+}
 
 function enc(p){ return p.split("/").map(encodeURIComponent).join("/"); }
 
@@ -107,8 +114,8 @@ function showCard(college, major, course){
   const path = college === "公共课" ? "公共课" : college + " · " + major;
   $("result").innerHTML =
     '<div class="card">' +
-      '<div class="name">' + course + '</div>' +
-      '<div class="path">' + path + '</div>' +
+      '<div class="name">' + esc(course) + '</div>' +
+      '<div class="path">' + esc(path) + '</div>' +
       '<div class="btns">' +
         '<a class="btn primary" href="' + courseUrl(college, major, course) + '">去这门课的资料页</a>' +
         '<a class="btn ghost" href="' + uploadUrl(college) + '">传资料到这</a>' +
@@ -183,7 +190,7 @@ function search(q){
   $("list").innerHTML = hits.slice(0, max).map(h => {
     const path = h.college === "公共课" ? "公共课" : h.college + " · " + h.major;
     return '<li><a href="' + courseUrl(h.college, h.major, h.course) + '">' +
-      '<span>' + h.course + '</span><div class="p">' + path + '</div></a></li>';
+      '<span>' + esc(h.course) + '</span><div class="p">' + esc(path) + '</div></a></li>';
   }).join("") + (hits.length > max ? '<li class="empty">还有 ' + (hits.length - max) + ' 条，请输入更具体的关键词。</li>' : '');
 }
 

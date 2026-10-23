@@ -103,7 +103,7 @@ class GenFormsTest(unittest.TestCase):
         self.assertEqual(gen_forms._validate_expected(self.templates), [])
         self.assertEqual(gen_forms._generic_problems(), [])
         self.assertEqual(
-            len(list(gen_forms.TEMPLATE_DIR.glob("*.yml"))),
+            len(list(gen_forms.TEMPLATE_DIR.glob("上传资料*.yml"))),
             26,
             "应为 24 个学院模板 + 1 个公共课 + 1 个通用兜底",
         )

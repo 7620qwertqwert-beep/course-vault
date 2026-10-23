@@ -1,0 +1,65 @@
+name: "侵权投诉 / 下架请求"
+description: "权利人或原作者要求删除某个文件/课程目录。不需要注册 GitHub 也能看，但提交需要 GitHub 账号；不便公开可只说路径，别填电话身份证。"
+title: "[投诉] "
+labels: ["投诉"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **这个模板不进入自动归档流程**，只用于下架请求，维护者会人工处理（承诺 24 小时内确认、48 小时内处理，见 [TAKEDOWN.md](../blob/main/TAKEDOWN.md)）。
+        请**不要**在这里填写手机号、身份证号、住址等敏感信息；身份核验会在私下进行。
+  - type: input
+    id: paths
+    attributes:
+      label: 要下架的文件或目录
+      description: "填仓库里的路径或直接贴链接，多个用换行分隔。例：courses/专业课/医学院/康复治疗学/人体解剖学/课件/2025秋-课件-人体解剖学.pdf"
+      placeholder: "courses/..."
+    validations:
+      required: true
+  - type: dropdown
+    id: reason
+    attributes:
+      label: 投诉类型
+      options:
+        - "版权（教师课件、教材、他人原创）"
+        - "个人隐私（含姓名、学号、联系方式等）"
+        - "内容错误或误导"
+        - "其他"
+    validations:
+      required: true
+  - type: input
+    id: identity
+    attributes:
+      label: 你与该材料的关系
+      description: "例如：授课教师本人 / 原作者 / 版权代理 / 院系工作人员。不需要提供证件，维护者会另行核实。"
+      placeholder: "授课教师本人"
+    validations:
+      required: true
+  - type: dropdown
+    id: action
+    attributes:
+      label: 希望的处置
+      options:
+        - "删除文件"
+        - "替换为其他版本"
+        - "仅保留课程卡片、删除资料"
+        - "只删某些页（请在下面写明）"
+    validations:
+      required: true
+  - type: textarea
+    id: detail
+    attributes:
+      label: 补充说明
+      description: "有什么需要我们知道的一次写清；涉及历史提交清理也请说明。"
+      placeholder: "可选"
+    validations:
+      required: false
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: 确认
+      options:
+        - label: 我确认以上信息真实，且我有权提出该请求
+          required: true
+    validations:
+      required: true
