@@ -2,8 +2,10 @@
 # -*- coding: utf-8 -*-
 """按 courses/ 的真实目录生成 GitHub Issue Forms 模板。
 
-每个学院一个独立模板：进模板后「开课学院」已预填，「所属专业」下拉里
-只有该学院的专业。公共课单独一个模板。
+模板粒度是「学院 + 专业」：每个专业一个独立模板，进去后「开课学院」
+和「所属专业」都已预填，「课程名称」下拉里只有该专业目录下的课程。
+公共课单独一个模板，课程下拉就是 courses/公共课/ 下的全部课程。
+通用兜底模板 上传资料.yml 是手写的，本脚本只校验、不覆盖。
 
 用法：
     python3 scripts/gen_forms.py            # 生成 / 更新模板（幂等）
@@ -12,19 +14,15 @@
 只使用 Python 3 标准库，零第三方依赖。
 
 说明：
-  * 通用兜底模板 .github/ISSUE_TEMPLATE/上传资料.yml 不由本脚本生成或覆盖，
-    那里仍用「学院·专业」；学院模板的「开课学院」已固定，专业选项只写
-    纯专业名，import_issue.py 会用「开课学院 + 专业名」定位。--check 会
-    只读校验通用模板的学院/专业下拉是否与目录同步，过期时退出码 1。
-  * 生成后立即做结构自检：字段顺序、id 集合、选项数量、控件类型、
-    required 等任何一项不符都会报错退出，避免模板字段错位。
+  * 文件名格式为 上传资料-<学院>-<专业>.yml；文件名里不出现「·」和空格，
+    目录名中的「·」、空白、斜杠会被替换为「-」。
+  * 专业模板的「课程名称」是 dropdown，选项严格等于该专业目录下的课程
+    文件夹名（按名称排序），不添加「其他/手填」项：表单做不到联动，加了
+    只会让 import_issue.py 的解析更复杂。
+  * 生成后立即做结构自检：模板数量、字段顺序、id 集合、选项集合、控件
+    类型、required、文件名规则等任何一项不符都会报错退出。
   * 每个模板都保留「课程类别」字段，因为 import_issue.py 按 label 解析时
-    要求该字段存在；学院模板里固定为「专业课」。
-  * 公共课模板的补充框 label 用「课程名」而不是「课程名称（补充）」：
-    import_issue.py 只把已知 label 当分节边界，未知的「课程名称（补充）」
-    会被并进上一个「课程名称」段，导致每次公共课提交都报“应为单行内容”。
-    import_issue.py 已把「课程名」登记为 course_manual 的别名：选
-    「其他（在下面写）」时会优先使用补充框，正常下拉提交不受影响。
+    要求该字段存在；专业模板里固定为「专业课」，公共课模板固定为「公共课」。
 """
 
 import argparse
@@ -59,6 +57,13 @@ ATTACHMENT_PLACEHOLDER = (
     "选「其他」年份学期时，也请在这里写清 20xx春 / 20xx秋。"
 )
 
+MAJOR_TEMPLATE_DESCRIPTION = "学院和专业已预填，课程从下拉里选。"
+PUBLIC_TEMPLATE_DESCRIPTION = "课程从下拉里选；列表里没有就开个 Issue 说一声。"
+PUBLIC_COURSE_DESCRIPTION = (
+    "只列出仓库里已经建好目录的公共课；列表里没有这门课，说明还没建目录"
+    "——开个 Issue 说一声。"
+)
+
 
 def _q(value):
     """输出 YAML 双引号标量；JSON 字符串语法与 YAML 双引号兼容。"""
@@ -89,6 +94,40 @@ def _majors(college):
     return _subdirs(MAJOR_DIR / college)
 
 
+def _courses(college, major):
+    return _subdirs(MAJOR_DIR / college / major)
+
+
+def _major_entries():
+    """返回全部 (学院, 专业, 课程列表)，顺序与目录排序一致。"""
+    return [
+        {
+            "college": college,
+            "major": major,
+            "courses": _courses(college, major),
+        }
+        for college in _colleges()
+        for major in _majors(college)
+    ]
+
+
+def _safe_filename_part(value):
+    """把目录名压成可安全放进文件名的片段：不用「·」、空白、路径分隔符。"""
+    text = re.sub(r"[·\s/\\]+", "-", str(value))
+    text = re.sub(r"-{2,}", "-", text).strip("-")
+    if not text:
+        raise ValueError("目录名 {!r} 清洗后为空，无法生成模板文件名".format(value))
+    return text
+
+
+def _major_template_filename(college, major):
+    return "{}{}-{}.yml".format(
+        GENERATED_PREFIX,
+        _safe_filename_part(college),
+        _safe_filename_part(major),
+    )
+
+
 def _dropdown(field_id, label, description, options, required=True, default=None):
     lines = [
         "  - type: dropdown",
@@ -99,8 +138,12 @@ def _dropdown(field_id, label, description, options, required=True, default=None
     ]
     if default is not None:
         lines.append("      default: {}".format(default))
-    lines.append("      options:")
-    lines.extend("        - {}".format(_q(option)) for option in options)
+    if options:
+        lines.append("      options:")
+        lines.extend("        - {}".format(_q(option)) for option in options)
+    else:
+        # 空专业暂时没有课程目录：写成 YAML 空数组，而不是裸 options:
+        lines.append("      options: []")
     lines.extend(
         [
             "    validations:",
@@ -208,17 +251,8 @@ def _public_template(courses):
         _dropdown(
             "course",
             "课程名称",
-            "从下拉里选你的课程；列表里没有就选「其他（在下面写）」，再到下一项补充。",
-            courses + [OTHER_OPTION],
-        ),
-        # label 必须是 import_issue.py 的已知别名，否则会污染上一段。
-        _input(
-            "course_manual",
-            "课程名",
-            "课程名称（补充）：仅当上面选了「其他（在下面写）」时填写；"
-            "必须与仓库课程文件夹名完全一致。",
-            placeholder="例如：高等数学",
-            required=False,
+            PUBLIC_COURSE_DESCRIPTION,
+            courses,
         ),
         _year_block(),
         _type_block(),
@@ -227,14 +261,19 @@ def _public_template(courses):
     ]
     return _document(
         "上传资料 · 公共课",
-        "公共课专用：课程从下拉里选；列表里没有就选「其他（在下面写）」，在下一项补充课程名。",
+        PUBLIC_TEMPLATE_DESCRIPTION,
         blocks,
     )
 
 
-def _college_template(college, majors):
-    # 学院已由本模板固定，专业下拉只写纯专业名，避免「学院·专业」重复前缀。
-    options = list(majors)
+def _major_course_description(major):
+    return (
+        "只列出「{}」下的课程；列表里没有你这门课，说明还没建目录——"
+        "开个 Issue 说一声，或看看通用模板。".format(major)
+    )
+
+
+def _major_template(college, major, courses):
     blocks = [
         _dropdown(
             "category",
@@ -249,19 +288,17 @@ def _college_template(college, majors):
             "已预填为本模板的学院；一般不用改。",
             value=college,
         ),
-        _dropdown(
+        _input(
             "major",
             "所属专业",
-            "只列出「{}」下的专业；直接选专业名即可，不用带学院前缀。".format(
-                college
-            ),
-            options,
+            "已预填为本模板的专业；一般不用改。",
+            value=major,
         ),
-        _input(
+        _dropdown(
             "course",
             "课程名称",
-            "与该专业下课程文件夹名完全一致；写错会提示最接近的。",
-            placeholder="例如：康复医学概论",
+            _major_course_description(major),
+            courses,
         ),
         _year_block(),
         _type_block(),
@@ -269,8 +306,8 @@ def _college_template(college, majors):
         _confirm_block(),
     ]
     return _document(
-        "上传资料 · {}".format(college),
-        "{}专用：学院已预填，专业下拉只含本院专业。".format(college),
+        "上传资料 · {} · {}".format(college, major),
+        MAJOR_TEMPLATE_DESCRIPTION,
         blocks,
     )
 
@@ -278,19 +315,28 @@ def _college_template(college, majors):
 def _expected_templates():
     """返回 {绝对路径: 文件内容}，顺序固定。"""
     public_courses = _public_courses()
-    colleges = _colleges()
+    public_path = TEMPLATE_DIR / PUBLIC_TEMPLATE_NAME
+    templates = {public_path: _public_template(public_courses)}
+    seen = {public_path: "公共课"}
 
-    templates = {
-        TEMPLATE_DIR / PUBLIC_TEMPLATE_NAME: _public_template(public_courses)
-    }
-    for college in colleges:
-        templates[TEMPLATE_DIR / "上传资料-{}.yml".format(college)] = _college_template(
-            college, _majors(college)
+    for entry in _major_entries():
+        path = TEMPLATE_DIR / _major_template_filename(
+            entry["college"], entry["major"]
+        )
+        label = "{}·{}".format(entry["college"], entry["major"])
+        if path in seen:
+            raise ValueError(
+                "模板文件名冲突：{} 与 {} 都会生成 {}；"
+                "请调整目录名".format(seen[path], label, path.name)
+            )
+        seen[path] = label
+        templates[path] = _major_template(
+            entry["college"], entry["major"], entry["courses"]
         )
     return templates
 
 
-COLLEGE_FIELD_ORDER = [
+MAJOR_FIELD_ORDER = [
     "category",
     "college",
     "major",
@@ -300,10 +346,11 @@ COLLEGE_FIELD_ORDER = [
     "attachments",
     "confirm",
 ]
+# 旧名字保留，避免外部脚本/测试引用时突然断掉。
+COLLEGE_FIELD_ORDER = MAJOR_FIELD_ORDER
 PUBLIC_FIELD_ORDER = [
     "category",
     "course",
-    "course_manual",
     "year",
     "material_type",
     "attachments",
@@ -359,6 +406,7 @@ def _parse_template_fields(content):
                 "type": match.group(1),
                 "id": "",
                 "label": "",
+                "description": "",
                 "value": None,
                 "default": None,
                 "options": [],
@@ -378,6 +426,10 @@ def _parse_template_fields(content):
         match = re.match(r"^      label: (.+?)\s*$", line)
         if match:
             current["label"] = _unquote(match.group(1))
+            continue
+        match = re.match(r"^      description: (.+?)\s*$", line)
+        if match:
+            current["description"] = _unquote(match.group(1))
             continue
         match = re.match(r"^      value: (.+?)\s*$", line)
         if match:
@@ -412,7 +464,9 @@ def _parse_template_fields(content):
     return fields, problems
 
 
-def _validate_template(name, content, college=None, majors=(), public=False):
+def _validate_template(
+    name, content, college=None, major=None, courses=(), public=False
+):
     """校验单个模板的字段结构；返回问题列表（空列表表示通过）。"""
     fields, problems = _parse_template_fields(content)
     problems = ["{}: {}".format(name, item) for item in problems]
@@ -425,7 +479,7 @@ def _validate_template(name, content, college=None, majors=(), public=False):
         else:
             by_id[field_id] = field
 
-    expected_order = PUBLIC_FIELD_ORDER if public else COLLEGE_FIELD_ORDER
+    expected_order = PUBLIC_FIELD_ORDER if public else MAJOR_FIELD_ORDER
     actual_order = [field["id"] for field in fields]
     if actual_order != expected_order:
         problems.append(
@@ -452,9 +506,7 @@ def _validate_template(name, content, college=None, majors=(), public=False):
             )
 
     for field_id, field in by_id.items():
-        if field["required"] is not True and not (
-            public and field_id == "course_manual"
-        ):
+        if field["required"] is not True:
             problems.append("{}: 字段 {} 必须 required: true".format(name, field_id))
 
     category = by_id.get("category")
@@ -508,26 +560,36 @@ def _validate_template(name, content, college=None, majors=(), public=False):
                 "{}: 确认勾选项不正确：{}".format(name, confirm["option_labels"])
             )
 
-    if public:
-        if not majors:
-            problems.append("{}: 公共课目录为空，至少需要一门课程".format(name))
-        course = by_id.get("course")
-        if course is not None:
-            expected_courses = list(majors) + [OTHER_OPTION]
-            if course["type"] != "dropdown" or course["options"] != expected_courses:
-                problems.append(
-                    "{}: 课程名称下拉必须为 {} 门公共课 + 兜底项".format(
-                        name, len(majors)
-                    )
-                )
-        manual = by_id.get("course_manual")
-        if manual is not None and manual["type"] != "input":
-            problems.append("{}: 课程名补充必须是 input".format(name))
-    else:
-        if not majors:
+    course = by_id.get("course")
+    expected_courses = list(courses)
+    if public and not expected_courses:
+        problems.append("{}: 公共课目录为空，至少需要一门课程".format(name))
+    if course is not None:
+        if course["type"] != "dropdown":
             problems.append(
-                "{}: 学院下没有专业目录，不能生成空的专业下拉".format(name)
+                "{}: 课程名称必须是 dropdown（实际 {}）".format(
+                    name, course["type"]
+                )
             )
+        if course["options"] != expected_courses:
+            problems.append(
+                "{}: 课程名称下拉与真实课程目录不一致（实际 {} 项，应为 {} 项）".format(
+                    name, len(course["options"]), len(expected_courses)
+                )
+            )
+        if OTHER_OPTION in course["options"]:
+            problems.append(
+                "{}: 课程名称下拉不应包含「{}」（表单做不到联动）".format(
+                    name, OTHER_OPTION
+                )
+            )
+
+    if public:
+        if "college" in by_id or "major" in by_id:
+            problems.append("{}: 公共课模板不应出现学院/专业字段".format(name))
+        if "course_manual" in by_id:
+            problems.append("{}: 公共课模板不应再保留手填课程补充框".format(name))
+    else:
         college_field = by_id.get("college")
         if college_field is None or college_field["type"] != "input":
             problems.append("{}: 开课学院必须是 input".format(name))
@@ -538,72 +600,98 @@ def _validate_template(name, content, college=None, majors=(), public=False):
                 )
             )
 
-        course = by_id.get("course")
-        if course is None or course["type"] != "input":
-            problems.append("{}: 课程名称必须是 input".format(name))
-
-        major = by_id.get("major")
-        if major is None:
-            problems.append("{}: 缺少所属专业字段".format(name))
-        else:
-            options = major["options"]
-            if major["type"] != "dropdown":
-                problems.append("{}: 所属专业必须是 dropdown".format(name))
-            if len(options) != len(majors):
-                problems.append(
-                    "{}: 所属专业选项 {} 项，应为 {} 项".format(
-                        name, len(options), len(majors)
-                    )
+        major_field = by_id.get("major")
+        if major_field is None or major_field["type"] != "input":
+            problems.append("{}: 所属专业必须是 input".format(name))
+        elif major_field["value"] != major:
+            problems.append(
+                "{}: 所属专业 value 为「{}」，应为「{}」".format(
+                    name, major_field["value"], major
                 )
-            if options != list(majors):
-                problems.append("{}: 所属专业选项与真实专业目录不一致".format(name))
-            for option in options:
-                if option != option.strip():
-                    problems.append(
-                        "{}: 所属专业选项首尾有空白，解析时会被去掉：{!r}".format(
-                            name, option
-                        )
-                    )
-                if not option or option.startswith(".") or ".." in option:
-                    problems.append(
-                        "{}: 所属专业选项不能以点开头或包含「..」：{}".format(
-                            name, option
-                        )
-                    )
-                if any(
-                    ord(ch) < 32 or 127 <= ord(ch) <= 0x9F for ch in option
-                ):
-                    problems.append(
-                        "{}: 所属专业选项包含控制字符：{!r}".format(name, option)
-                    )
-                if any(ch in option for ch in "·/／\\"):
-                    problems.append(
-                        "{}: 所属专业选项不应带学院前缀或路径分隔符：{}".format(
-                            name, option
-                        )
-                    )
+            )
+
+        if course is not None and course["description"] != _major_course_description(
+            major
+        ):
+            problems.append(
+                "{}: 课程名称 description 与专业不匹配（实际「{}」）".format(
+                    name, course["description"]
+                )
+            )
 
     return problems
 
 
-def _validate_expected(expected):
+def _filename_problems(path):
+    """文件名规则：不带「·」、空白、路径分隔符，且由本脚本管理。"""
+    name = path.name
     problems = []
+    if "·" in name:
+        problems.append("文件名不能包含「·」：{}".format(name))
+    if any(ch.isspace() for ch in name):
+        problems.append("文件名不能包含空白：{}".format(name))
+    if "/" in name or "\\" in name:
+        problems.append("文件名不能包含路径分隔符：{}".format(name))
+    if not name.startswith(GENERATED_PREFIX) or not name.endswith(".yml"):
+        problems.append(
+            "生成模板文件名应形如 {}<学院>-<专业>.yml：{}".format(
+                GENERATED_PREFIX, name
+            )
+        )
+    return problems
+
+
+def _validate_expected(expected):
+    """校验整批预期模板：数量、路径、文件名、每个模板结构。"""
+    problems = []
+    public_courses = _public_courses()
+    entries = _major_entries()
+    expected_paths = {TEMPLATE_DIR / PUBLIC_TEMPLATE_NAME: None}
+    for entry in entries:
+        try:
+            path = TEMPLATE_DIR / _major_template_filename(
+                entry["college"], entry["major"]
+            )
+        except ValueError as exc:
+            problems.append(str(exc))
+            continue
+        expected_paths[path] = entry
+
+    if len(expected_paths) != len(entries) + 1:
+        problems.append(
+            "模板数量不正确：{}（应为 专业 {} + 公共课 1）".format(
+                len(expected_paths), len(entries)
+            )
+        )
+
+    for path in expected_paths:
+        if path not in expected:
+            problems.append("缺少预期模板：{}".format(path.name))
+    for path in expected:
+        if path not in expected_paths:
+            problems.append("多出未知模板：{}".format(path.name))
+
     for path, content in expected.items():
-        if path.name == PUBLIC_TEMPLATE_NAME:
+        for item in _filename_problems(path):
+            problems.append("{}: {}".format(path.name, item))
+        if path == TEMPLATE_DIR / PUBLIC_TEMPLATE_NAME:
             problems.extend(
                 _validate_template(
                     path.name,
                     content,
-                    college=None,
-                    majors=_public_courses(),
+                    courses=public_courses,
                     public=True,
                 )
             )
-        else:
-            college = path.stem[len(GENERATED_PREFIX) :]
+        elif path in expected_paths and expected_paths[path] is not None:
+            entry = expected_paths[path]
             problems.extend(
                 _validate_template(
-                    path.name, content, college=college, majors=_majors(college)
+                    path.name,
+                    content,
+                    college=entry["college"],
+                    major=entry["major"],
+                    courses=entry["courses"],
                 )
             )
     return problems
@@ -617,7 +705,7 @@ def _generic_problems():
     """
     path = TEMPLATE_DIR / GENERIC_TEMPLATE_NAME
     if not path.is_file():
-        return []
+        return ["{}: 通用兜底模板不存在".format(GENERIC_TEMPLATE_NAME)]
     try:
         content = path.read_text(encoding="utf-8")
     except OSError as exc:
@@ -704,17 +792,32 @@ def _write_if_changed(path, content):
     return True
 
 
-def _generate():
-    expected = _expected_templates()
+def _counts(expected):
+    return {
+        "majors": max(len(expected) - 1, 0),
+        "public": len(_public_courses()),
+        "generic": 1 if (TEMPLATE_DIR / GENERIC_TEMPLATE_NAME).is_file() else 0,
+    }
 
-    public_courses = _public_courses()
-    colleges = _colleges()
-    print("公共课：{} 门课程".format(len(public_courses)))
-    for college in colleges:
-        print("{}：{} 个专业".format(college, len(_majors(college))))
+
+def _print_counts(counts):
     print(
-        "共 {} 个模板（公共课 1 + 学院 {}）".format(len(expected), len(colleges))
+        "专业模板 {} 个 / 公共课 {} 门 / 兜底 {} 个".format(
+            counts["majors"], counts["public"], counts["generic"]
+        )
     )
+
+
+def _generate():
+    try:
+        expected = _expected_templates()
+    except ValueError as exc:
+        print("ERROR {}".format(exc))
+        print("FAIL 模板生成失败")
+        return 1
+
+    counts = _counts(expected)
+    _print_counts(counts)
 
     # 写盘前先校验生成内容，避免把错位模板落盘。
     problems = _validate_expected(expected)
@@ -736,9 +839,10 @@ def _generate():
         )
 
     for path, content in expected.items():
-        _write_if_changed(path, content)
+        if not _write_if_changed(path, content):
+            return 1
 
-    # 清掉学院/公共课目录变更后遗留的旧模板，避免选项过期。
+    # 清掉旧粒度（按学院）或其他目录变更后遗留的模板，避免选项过期。
     for path in sorted(_existing_generated()):
         if path not in expected:
             try:
@@ -764,7 +868,7 @@ def _generate():
         return 1
 
     print(
-        "CHECK OK {} 个模板结构自检通过（字段顺序 / id / 选项数 / 控件类型 / required）".format(
+        "CHECK OK {} 个模板结构自检通过（数量 / 字段顺序 / id / 选项集合 / 控件类型 / required / 文件名）".format(
             len(expected)
         )
     )
@@ -773,7 +877,12 @@ def _generate():
 
 
 def _check():
-    expected = _expected_templates()
+    try:
+        expected = _expected_templates()
+    except ValueError as exc:
+        print("ERROR {}".format(exc))
+        print("FAIL 表单模板生成规则校验失败")
+        return 1
     actual = _existing_generated()
     problems = []
 
@@ -808,13 +917,15 @@ def _check():
         )
         return 1
 
-    colleges = _colleges()
-    majors = sum(len(_majors(college)) for college in colleges)
-    generic_count = 1 if (TEMPLATE_DIR / GENERIC_TEMPLATE_NAME).is_file() else 0
+    counts = _counts(expected)
+    _print_counts(counts)
     print(
-        "OK 表单模板与 courses/ 一致（自动生成 {} 个：公共课 1、学院 {}；"
-        "通用兜底 {}；公共课 {} 门、专业 {} 个）".format(
-            len(expected), len(colleges), generic_count, len(_public_courses()), majors
+        "OK 表单模板与 courses/ 一致（自动生成 {} 个：专业 {} + 公共课 1；"
+        "通用兜底 {}；公共课 {} 门）".format(
+            len(expected),
+            counts["majors"],
+            counts["generic"],
+            counts["public"],
         )
     )
     return 0
@@ -823,7 +934,7 @@ def _check():
 def main(argv=None):
     parser = argparse.ArgumentParser(
         prog="gen_forms.py",
-        description="按 courses/ 真实目录生成按学院拆分的 Issue Forms 模板。",
+        description="按 courses/ 真实目录生成「学院 + 专业」粒度的 Issue Forms 模板。",
     )
     parser.add_argument(
         "--check",

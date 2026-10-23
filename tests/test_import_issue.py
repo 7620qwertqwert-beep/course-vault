@@ -80,6 +80,38 @@ def make_body(
     )
 
 
+def make_major_template_body(
+    college="医学院",
+    major="康复治疗学",
+    course="康复医学概论",
+    year="2025秋",
+    material_type="笔记",
+    attachments=None,
+    confirm=CONFIRM_CHECKED,
+):
+    """按新的「学院 + 专业」模板渲染正文：学院/专业/课程三处都是纯名。"""
+    if attachments is None:
+        attachments = "[我的笔记.pdf]({})".format(FAKE_ATTACHMENT_URL)
+    return (
+        "### 课程类别\n\n专业课\n\n"
+        "### 开课学院\n\n{college}\n\n"
+        "### 所属专业\n\n{major}\n\n"
+        "### 课程名称\n\n{course}\n\n"
+        "### 年份学期\n\n{year}\n\n"
+        "### 资料类型\n\n{material_type}\n\n"
+        "### 附件\n\n{attachments}\n\n"
+        "### 确认\n\n{confirm}\n"
+    ).format(
+        college=college,
+        major=major,
+        course=course,
+        year=year,
+        material_type=material_type,
+        attachments=attachments,
+        confirm=confirm,
+    )
+
+
 class ImportIssueTest(unittest.TestCase):
     def setUp(self):
         self._old_repo_root = imp.REPO_ROOT
@@ -266,6 +298,43 @@ class ImportIssueTest(unittest.TestCase):
         self.assertEqual(len(majors), 84, majors)
         self.assertEqual(len(set(colleges)), len(colleges))
         self.assertEqual(len(set(majors)), len(majors))
+
+    def test_new_major_template_pure_prefill_locates_course(self):
+        """新专业模板：学院/专业预填纯名、课程来自下拉，仍能定位到四层目录。"""
+        body = make_major_template_body()
+        form = imp._parse_form("[上传] 测试", body)
+        self.assertEqual(form["category"], "专业课")
+        self.assertEqual(form["college"], "医学院")
+        self.assertEqual(form["major"], "康复治疗学")
+        self.assertEqual(form["course"], "康复医学概论")
+        self.assertEqual(form["college_source"], "dropdown")
+        self.assertEqual(form["major_source"], "dropdown")
+
+        self.write_body(body)
+        code, out, _ = self.run_main("--dry-run")
+        self.assertEqual(code, 0, out)
+        self.assertIn(
+            "courses/专业课/医学院/康复治疗学/康复医学概论/笔记", out
+        )
+
+    def test_new_major_template_accepts_parenthetical_major_note(self):
+        body = make_major_template_body(major="康复治疗学（中外合作）")
+        form = imp._parse_form("", body)
+        self.assertEqual(form["college"], "医学院")
+        self.assertEqual(form["major"], "康复治疗学")
+        self.assertEqual(form["course"], "康复医学概论")
+
+    def test_new_major_template_course_typo_suggests_scoped_course(self):
+        self.add_course("医学院", "护理学", "人体解剖学")
+        self.write_body(
+            make_major_template_body(
+                major="护理学", course="人体解剖学（旧）"
+            )
+        )
+        code, out, _ = self.run_main("--dry-run")
+        self.assertEqual(code, 2)
+        self.assertIn("课程目录不存在", out)
+        self.assertIn("人体解剖学", out)
 
     # ---------- 失败路径 ----------
 

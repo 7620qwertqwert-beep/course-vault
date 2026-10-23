@@ -1,6 +1,6 @@
 # 由 scripts/gen_forms.py 自动生成，请勿手工编辑
 name: "上传资料 · 公共课"
-description: "公共课专用：课程从下拉里选；列表里没有就选「其他（在下面写）」，在下一项补充课程名。"
+description: "课程从下拉里选；列表里没有就开个 Issue 说一声。"
 title: "[上传] "
 labels: ["待入库"]
 body:
@@ -19,7 +19,7 @@ body:
     id: course
     attributes:
       label: 课程名称
-      description: "从下拉里选你的课程；列表里没有就选「其他（在下面写）」，再到下一项补充。"
+      description: "只列出仓库里已经建好目录的公共课；列表里没有这门课，说明还没建目录——开个 Issue 说一声。"
       options:
         - "中国近现代史纲要"
         - "习近平新时代中国特色社会主义思想概论"
@@ -41,18 +41,8 @@ body:
         - "线性代数"
         - "马克思主义基本原理"
         - "高等数学"
-        - "其他（在下面写）"
     validations:
       required: true
-
-  - type: input
-    id: course_manual
-    attributes:
-      label: 课程名
-      description: "课程名称（补充）：仅当上面选了「其他（在下面写）」时填写；必须与仓库课程文件夹名完全一致。"
-      placeholder: "例如：高等数学"
-    validations:
-      required: false
 
   - type: dropdown
     id: year
