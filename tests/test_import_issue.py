@@ -40,7 +40,9 @@ CONFIRM_UNCHECKED = "- [ ] 文件里不含本人或他人的姓名、学号、�
 def make_body(
     category="专业课",
     college="医学院",
+    college_manual="",
     major="医学院·康复治疗学",
+    major_manual="",
     course="康复医学概论",
     year="2025秋",
     material_type="笔记",
@@ -53,7 +55,9 @@ def make_body(
     return (
         "### 课程类别\n\n{category}\n\n"
         "### 开课学院\n\n{college}\n\n"
+        "### 学院名称\n\n{college_manual}\n\n"
         "### 所属专业\n\n{major}\n\n"
+        "### 专业名称\n\n{major_manual}\n\n"
         "### 课程名称\n\n{course}\n\n"
         "### 年份学期\n\n{year}\n\n"
         "### 资料类型\n\n{material_type}\n\n"
@@ -62,7 +66,9 @@ def make_body(
     ).format(
         category=category,
         college=college,
+        college_manual=college_manual,
         major=major,
+        major_manual=major_manual,
         course=course,
         year=year,
         material_type=material_type,
@@ -178,7 +184,9 @@ class ImportIssueTest(unittest.TestCase):
         expected_labels = (
             "课程类别",
             "开课学院",
+            "学院名称",
             "所属专业",
+            "专业名称",
             "课程名称",
             "年份学期",
             "资料类型",
@@ -194,15 +202,21 @@ class ImportIssueTest(unittest.TestCase):
             self.assertIn(label, imp._parse_sections(make_body()))
         self.assertIn(imp.CONFIRM_REQUIREMENT, form_text)
 
-    def test_form_uses_free_text_for_college_and_major(self):
+    def test_form_uses_dropdown_plus_manual_input(self):
         form_text = (
             REPO_ROOT / ".github" / "ISSUE_TEMPLATE" / "上传资料.yml"
         ).read_text(encoding="utf-8")
         for field_id in ("college", "major"):
             self.assertRegex(
                 form_text,
+                r"(?ms)^\s*- type: dropdown\s*\n\s*id: {}\b".format(field_id),
+                "字段 {} 应保持 dropdown".format(field_id),
+            )
+        for field_id in ("college_manual", "major_manual"):
+            self.assertRegex(
+                form_text,
                 r"(?ms)^\s*- type: input\s*\n\s*id: {}\b".format(field_id),
-                "字段 {} 应改为 input".format(field_id),
+                "字段 {} 应为补充 input".format(field_id),
             )
         for field_id in ("category", "year", "material_type"):
             self.assertRegex(
@@ -210,7 +224,32 @@ class ImportIssueTest(unittest.TestCase):
                 r"(?ms)^\s*- type: dropdown\s*\n\s*id: {}\b".format(field_id),
                 "字段 {} 应保持 dropdown".format(field_id),
             )
-        self.assertIn("写错不要紧，提交后机器人会告诉你正确写法", form_text)
+        self.assertIn("其他（在下面写）", form_text)
+        self.assertIn("仅当上面选了「其他」时填写", form_text)
+        self.assertIn("写错会提示最接近的课程名", form_text)
+
+    def test_form_dropdown_option_counts(self):
+        form_text = (
+            REPO_ROOT / ".github" / "ISSUE_TEMPLATE" / "上传资料.yml"
+        ).read_text(encoding="utf-8")
+
+        def options_of(field_id):
+            block = re.search(
+                r"(?ms)^\s*- type: dropdown\s*\n\s*id: {}\b(.*?)"
+                r"(?=^\s*- type: )".format(re.escape(field_id)),
+                form_text,
+            )
+            self.assertIsNotNone(block, "找不到 dropdown：{}".format(field_id))
+            return re.findall(r"(?m)^\s{8}- (.+?)\s*$", block.group(1))
+
+        colleges = options_of("college")
+        majors = options_of("major")
+        self.assertEqual(len(colleges), 25, colleges)
+        self.assertEqual(len(majors), 85, majors)
+        self.assertEqual(colleges[-1], "其他（在下面写）")
+        self.assertEqual(majors[-1], "其他（在下面写）")
+        self.assertEqual(len(set(colleges)), len(colleges))
+        self.assertEqual(len(set(majors)), len(majors))
 
     # ---------- 失败路径 ----------
 
@@ -281,7 +320,101 @@ class ImportIssueTest(unittest.TestCase):
         body = make_body(college="_No response_", major="康复治疗学")
         form = imp._parse_form("", body)
         self.assertEqual(form["college"], "医学院")
+        self.assertEqual(form["college_source"], "derived")
         self.assertEqual(form["major"], "康复治疗学")
+
+    def test_dropdown_only_college_and_major(self):
+        body = make_body()
+        form = imp._parse_form("", body)
+        self.assertEqual(form["college"], "医学院")
+        self.assertEqual(form["college_source"], "dropdown")
+        self.assertEqual(form["major"], "康复治疗学")
+        self.assertEqual(form["major_source"], "dropdown")
+
+    def test_manual_college_and_major_with_other_option(self):
+        body = make_body(
+            college=imp.OTHER_OPTION,
+            college_manual="医学院",
+            major=imp.OTHER_OPTION,
+            major_manual="康复治疗学",
+        )
+        form = imp._parse_form("", body)
+        self.assertEqual(form["college"], "医学院")
+        self.assertEqual(form["college_source"], "manual")
+        self.assertEqual(form["major"], "康复治疗学")
+        self.assertEqual(form["major_source"], "manual")
+
+    def test_manual_major_accepts_full_college_separator(self):
+        body = make_body(
+            college=imp.OTHER_OPTION,
+            college_manual="医学院",
+            major=imp.OTHER_OPTION,
+            major_manual="医学院 / 康复治疗学",
+        )
+        form = imp._parse_form("", body)
+        self.assertEqual(form["college"], "医学院")
+        self.assertEqual(form["major"], "康复治疗学")
+        self.assertEqual(form["major_source"], "manual")
+
+    def test_manual_values_keep_normalization_and_parenthetical(self):
+        body = make_body(
+            college=imp.OTHER_OPTION,
+            college_manual="　医学院（附属医院）　",
+            major=imp.OTHER_OPTION,
+            major_manual="　医学院 ／ 康复治疗学　",
+        )
+        form = imp._parse_form("", body)
+        self.assertEqual(form["college"], "医学院")
+        self.assertEqual(form["major"], "康复治疗学")
+        self.assertEqual(form["college_source"], "manual")
+
+    def test_manual_same_as_dropdown_is_not_conflict(self):
+        body = make_body(
+            college="医学院",
+            college_manual="医学院",
+            major="医学院·康复治疗学",
+            major_manual="医学院·康复治疗学",
+        )
+        form = imp._parse_form("", body)
+        self.assertEqual(form["college"], "医学院")
+        self.assertEqual(form["major"], "康复治疗学")
+        self.assertEqual(form["college_source"], "manual")
+
+    def test_manual_overrides_different_dropdown(self):
+        body = make_body(college="文学院", college_manual="医学院")
+        form = imp._parse_form("", body)
+        self.assertEqual(form["college"], "医学院", "补充框应优先于下拉框")
+        self.assertEqual(form["college_source"], "manual")
+        self.assertEqual(form["major"], "康复治疗学")
+
+    def test_other_option_without_manual_college_fails(self):
+        self.write_body(make_body(college=imp.OTHER_OPTION, college_manual=""))
+        code, out, _ = self.run_main("--dry-run")
+        self.assertEqual(code, 2)
+        self.assertIn("请在下方的「学院名称」里填写学院，或从下拉里选一个", out)
+
+    def test_other_option_without_manual_major_fails(self):
+        self.write_body(make_body(major=imp.OTHER_OPTION, major_manual=""))
+        code, out, _ = self.run_main("--dry-run")
+        self.assertEqual(code, 2)
+        self.assertIn("请在下方的「专业名称」里填写专业，或从下拉里选一个", out)
+
+    def test_manual_college_typo_suggests_closest(self):
+        self.write_body(
+            make_body(college=imp.OTHER_OPTION, college_manual="医学完")
+        )
+        code, out, _ = self.run_main("--dry-run")
+        self.assertEqual(code, 2)
+        self.assertIn("找不到学院", out)
+        self.assertIn("医学院", out)
+
+    def test_meta_reports_manual_source_when_override(self):
+        self.write_body(make_body(college="文学院", college_manual="医学院"))
+        code, out, _ = self.run_main("--dry-run")
+        self.assertEqual(code, 0, out)
+        self.assertIn("IMPORT_META college=医学院", out)
+        self.assertIn("IMPORT_META college_source=manual", out)
+        self.assertIn("IMPORT_META major_source=dropdown", out)
 
     def test_major_accepts_slash_and_spaced_separator(self):
         for major in ("医学院/康复治疗学", "医学院 · 康复治疗学"):
