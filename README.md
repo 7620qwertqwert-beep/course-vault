@@ -3,7 +3,7 @@
 
 > 一门课的资料，不该让每一届都从零攒起。
 
-> 🇨🇳 **打不开 GitHub？** 用国内镜像站：[gitee.com/youliboshi/course-vault](https://gitee.com/youliboshi/course-vault) —— 浏览、下载、上传都在那里，**不需要加速器**。
+> 📚 **资料库地址**：[gitee.com/youliboshi/course-vault](https://gitee.com/youliboshi/course-vault) —— 浏览、下载、上传都在这里，国内直接打开。
 >
 > 权利人要下架某份材料：[侵权投诉 / 下架请求](https://gitee.com/youliboshi/course-vault/issues/new)，24 小时内确认、48 小时内处理。
 
@@ -12,8 +12,8 @@
 | 我想…… | 三步走 |
 |---|---|
 | **找资料** | ① 打开 [INDEX.md](INDEX.md) → ② 按学院或课名搜索 → ③ 点进课程文件夹下载。 |
-| **传资料** | ① 打开 [国内镜像 → Issues → 新建 Issue](https://gitee.com/youliboshi/course-vault/issues/new)（GitHub 能访问的同学也可以用[这里](https://github.com/7620qwertqwert-beep/course-vault/issues/new/choose)）→ ② 选「上传资料」模板，按提示填课程、专业、学期、类型，把文件拖进去 → ③ 提交；维护者确认后归档。 |
-| **有问题** | 到 [Issues](https://github.com/7620qwertqwert-beep/course-vault/issues) 提问，或直接把问题/文件发给维护者。 |
+| **传资料** | ① 打开 [国内镜像 → Issues → 新建 Issue](https://gitee.com/youliboshi/course-vault/issues/new)→ ② 选「上传资料」模板，按提示填课程、专业、学期、类型，把文件拖进去 → ③ 提交；维护者确认后归档。 |
+| **有问题** | 到 [Issues](https://gitee.com/youliboshi/course-vault/issues) 提问，或直接把问题/文件发给维护者。 |
 
 目录已建好，资料靠大家补，卡片里“待补充”的字段欢迎填。
 
@@ -68,8 +68,8 @@ courses/
 | 顺序 | 通道 | 适合谁 | 怎么走 |
 |---|---|---|---|
 | **方式零（推荐，主通道）** | 填「上传资料」表单 | 所有同学；不用 Fork、不用懂路径、不用改 INDEX | Issues → New issue → 先选你所在学院的模板（例如「上传资料 · 医学院」）→ 表单里先选专业、再选课程（每项前面是专业名）→ 拖附件 → Submit new issue；找不到学院就用通用模板；维护者加 `approved` 后机器人自动归档、自动合并 |
-| 方式一（备选） | 直接发给维护者 | 没有 GitHub 账号，或手机加不了附件 | 在班级/学院群问一句，或开 Issue 留言；写清课程、学院/专业、年份学期、资料类型 |
-| 方式二（备选 · 进阶，可选） | Fork + Pull Request | 想自己控制文件位置、愿意学一点 GitHub | Fork → 在自己的副本上传 → 回官方仓库开 PR |
+| 方式一（备选） | 直接发给维护者 | 不方便注册账号，或手机加不了附件 | 在班级/学院群问一句，或开 Issue 留言；写清课程、学院/专业、年份学期、资料类型 |
+| 方式二（备选 · 进阶，可选） | Fork + Pull Request | 想自己控制文件位置、愿意学一点 Git | Fork → 在自己的副本上传 → 回官方仓库开 PR |
 | 方式三（备选 · 开发者用） | 本地 git 命令 | 会用命令行的开发者 | clone → 放文件 → commit → push（无权限就推到自己的 fork 再开 PR） |
 
 ### 方式零：填「上传资料」表单（推荐）
@@ -89,7 +89,7 @@ courses/
 
 ### 方式一：直接发给维护者（备选）
 
-没有 GitHub 账号也能传。在班级/学院群问一句，或开 Issue 留言，写清 **课程全名 + 学院/专业 + 年份学期 + 资料类型**；维护者替你命名、归档、提交。
+不方便注册账号也能传。在班级/学院群问一句，或开 Issue 留言，写清 **课程全名 + 学院/专业 + 年份学期 + 资料类型**；维护者替你命名、归档、提交。
 
 ### 方式二：Fork + Pull Request（备选 · 进阶，可选）
 
@@ -101,7 +101,7 @@ courses/
 ### 方式三：本地 git（备选 · 开发者用）
 
 ```bash
-git clone https://github.com/7620qwertqwert-beep/course-vault.git
+git clone https://gitee.com/youliboshi/course-vault.git
 cd course-vault
 # 把文件放进对应课程目录，文件名按下面的规范
 git add .
