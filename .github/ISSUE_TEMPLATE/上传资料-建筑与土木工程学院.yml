@@ -1,0 +1,143 @@
+# 由 scripts/gen_forms.py 自动生成，请勿手工编辑
+name: "上传资料 · 建筑与土木工程学院"
+description: "学院已填好，先选专业，再选课程。"
+title: "[上传] "
+labels: ["待入库"]
+body:
+  - type: dropdown
+    id: category
+    attributes:
+      label: 课程类别
+      description: "本模板固定为专业课，无需选择。"
+      default: 0
+      options:
+        - "专业课"
+    validations:
+      required: true
+
+  - type: input
+    id: college
+    attributes:
+      label: 开课学院
+      description: "已预填为本模板的学院；一般不用改。"
+      value: "建筑与土木工程学院"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: major
+    attributes:
+      label: 所属专业
+      description: "先选你所在的专业，下一步的课程下拉会按这个专业核对。"
+      options:
+        - "土木工程"
+        - "工程管理"
+        - "船舶与海洋工程"
+        - "道路桥梁与渡河工程"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: course
+    attributes:
+      label: 课程名称
+      description: "先在上一步选专业，然后在这里挑课程；每项前面是它所属的专业。只列出本学院的课程。"
+      options:
+        - "土木工程 · 土力学"
+        - "土木工程 · 土木工程制图"
+        - "土木工程 · 土木工程施工技术"
+        - "土木工程 · 土木工程施工组织"
+        - "土木工程 · 土木工程材料"
+        - "土木工程 · 土木工程概论"
+        - "土木工程 · 土木工程测量"
+        - "土木工程 · 土木工程试验"
+        - "土木工程 · 土木法规"
+        - "土木工程 · 基础工程"
+        - "土木工程 · 工程地质"
+        - "土木工程 · 工程荷载与可靠度设计原理"
+        - "土木工程 · 工程项目管理"
+        - "土木工程 · 工程项目经济原理"
+        - "土木工程 · 材料力学"
+        - "土木工程 · 流体力学"
+        - "土木工程 · 混凝土结构基本原理"
+        - "土木工程 · 理论力学"
+        - "土木工程 · 结构力学"
+        - "土木工程 · 计算机辅助设计"
+        - "土木工程 · 钢结构基本原理"
+        - "道路桥梁与渡河工程 · 交通土建制图"
+        - "道路桥梁与渡河工程 · 公路施工组织与概预算"
+        - "道路桥梁与渡河工程 · 土质学与土力学"
+        - "道路桥梁与渡河工程 · 基础工程"
+        - "道路桥梁与渡河工程 · 工程地质"
+        - "道路桥梁与渡河工程 · 工程弹性力学"
+        - "道路桥梁与渡河工程 · 工程经济与管理"
+        - "道路桥梁与渡河工程 · 材料力学"
+        - "道路桥梁与渡河工程 · 桥梁工程"
+        - "道路桥梁与渡河工程 · 水力学与桥涵水文"
+        - "道路桥梁与渡河工程 · 测量学"
+        - "道路桥梁与渡河工程 · 混凝土结构设计原理"
+        - "道路桥梁与渡河工程 · 理论力学"
+        - "道路桥梁与渡河工程 · 结构力学"
+        - "道路桥梁与渡河工程 · 路基路面工程"
+        - "道路桥梁与渡河工程 · 路面养护管理系统"
+        - "道路桥梁与渡河工程 · 道路勘测设计"
+        - "道路桥梁与渡河工程 · 道路工程材料"
+        - "道路桥梁与渡河工程 · 钢与组合结构设计原理"
+        - "道路桥梁与渡河工程 · 隧道工程"
+        - "道路桥梁与渡河工程 · 高速公路营运管理与养护技术"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: year
+    attributes:
+      label: 年份学期
+      description: "这份资料是哪一学年、哪个学期用的；选「其他」时请在附件框写清 20xx春 / 20xx秋。"
+      options:
+        - "2024秋"
+        - "2025春"
+        - "2025秋"
+        - "2026春"
+        - "2026秋"
+        - "其他"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: material_type
+    attributes:
+      label: 资料类型
+      description: "这份资料是什么，决定放进课程下的哪个文件夹。"
+      options:
+        - "笔记"
+        - "课件"
+        - "试卷"
+        - "作业"
+        - "实验报告"
+        - "复习资料"
+        - "其他"
+    validations:
+      required: true
+
+  - type: textarea
+    id: attachments
+    attributes:
+      label: 附件
+      description: "把文件拖进来：最多 5 个、每个不超过 50MB（zip 不超过 20MB，合计不超过 100MB）。手机如无法添加附件，请直接发给维护者。"
+      placeholder: |
+        把文件拖进来后，GitHub 会自动生成类似下面的链接，请不要删掉：
+        [我的笔记.pdf](https://github.com/user-attachments/assets/...)
+        选「其他」年份学期时，也请在这里写清 20xx春 / 20xx秋。
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: 确认
+      description: "上传前请自己检查一遍文件内容和文档属性。"
+      options:
+        - label: 文件里不含本人或他人的姓名、学号、手机号、身份证号
+          required: true
+    validations:
+      required: true

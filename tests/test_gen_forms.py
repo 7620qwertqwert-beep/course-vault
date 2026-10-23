@@ -85,7 +85,7 @@ def write_generic(root):
 
 class GenFormsTest(unittest.TestCase):
     def setUp(self):
-        self.entries = gen_forms._major_entries()
+        self.colleges = gen_forms._colleges()
         self.templates = gen_forms._expected_templates()
         self.public_path = gen_forms.TEMPLATE_DIR / gen_forms.PUBLIC_TEMPLATE_NAME
 
@@ -94,51 +94,91 @@ class GenFormsTest(unittest.TestCase):
         self.assertEqual(problems, [])
         return {field["id"]: field for field in fields}
 
-    def path_for(self, entry):
-        return gen_forms.TEMPLATE_DIR / gen_forms._major_template_filename(
-            entry["college"], entry["major"]
-        )
+    def path_for(self, college):
+        return gen_forms.TEMPLATE_DIR / gen_forms._college_template_filename(college)
 
     def test_all_generated_templates_pass_structure_check(self):
-        self.assertEqual(len(self.entries), 84)
-        self.assertEqual(len(self.templates), 85)
+        self.assertEqual(len(self.colleges), 24)
+        self.assertEqual(len(self.templates), 25, "应为 24 个学院模板 + 1 个公共课")
         self.assertEqual(gen_forms._validate_expected(self.templates), [])
         self.assertEqual(gen_forms._generic_problems(), [])
         self.assertEqual(
             len(list(gen_forms.TEMPLATE_DIR.glob("*.yml"))),
-            86,
-            "应为 84 个专业模板 + 1 个公共课 + 1 个通用兜底",
+            26,
+            "应为 24 个学院模板 + 1 个公共课 + 1 个通用兜底",
         )
 
-    def test_major_templates_prefill_college_and_major_and_course_dropdown(self):
-        for entry in self.entries:
-            with self.subTest(college=entry["college"], major=entry["major"]):
-                path = self.path_for(entry)
+    def test_college_templates_prefill_and_options(self):
+        for college in self.colleges:
+            with self.subTest(college=college):
+                path = self.path_for(college)
                 self.assertIn(path, self.templates)
                 self.assertEqual(gen_forms._filename_problems(path), [])
                 content = self.templates[path]
                 fields = self.fields_of(content)
                 self.assertEqual(
-                    [field["id"] for field in gen_forms._parse_template_fields(content)[0]],
-                    gen_forms.MAJOR_FIELD_ORDER,
+                    [
+                        field["id"]
+                        for field in gen_forms._parse_template_fields(content)[0]
+                    ],
+                    gen_forms.COLLEGE_FIELD_ORDER,
+                )
+                self.assertEqual(
+                    'name: "上传资料 · {}"'.format(college), content.splitlines()[1]
                 )
                 self.assertEqual(fields["category"]["options"], ["专业课"])
                 self.assertEqual(fields["category"]["default"], "0")
                 self.assertEqual(fields["college"]["type"], "input")
-                self.assertEqual(fields["college"]["value"], entry["college"])
-                self.assertEqual(fields["major"]["type"], "input")
-                self.assertEqual(fields["major"]["value"], entry["major"])
-                self.assertNotIn("·", fields["major"]["value"])
+                self.assertEqual(fields["college"]["value"], college)
+                self.assertEqual(fields["major"]["type"], "dropdown")
+                self.assertEqual(
+                    fields["major"]["options"], gen_forms._majors(college)
+                )
                 self.assertEqual(fields["course"]["type"], "dropdown")
-                self.assertEqual(fields["course"]["options"], entry["courses"])
-                self.assertNotIn(gen_forms.OTHER_OPTION, fields["course"]["options"])
+                self.assertEqual(
+                    fields["course"]["options"],
+                    gen_forms._college_course_options(college),
+                )
                 self.assertEqual(
                     fields["course"]["description"],
-                    gen_forms._major_course_description(entry["major"]),
+                    gen_forms.COLLEGE_COURSE_DESCRIPTION,
+                )
+                self.assertNotIn(
+                    gen_forms.OTHER_OPTION, fields["course"]["options"]
+                )
+                self.assertNotIn(
+                    gen_forms.OTHER_OPTION, fields["major"]["options"]
                 )
                 for field in fields.values():
                     self.assertIs(field["required"], True, field["id"])
-                self.assertIn("课程名称", content)
+
+    def test_college_course_options_sorted_and_formatted(self):
+        for college in self.colleges:
+            with self.subTest(college=college):
+                majors = gen_forms._majors(college)
+                expected = [
+                    "{} · {}".format(major, course)
+                    for major in majors
+                    for course in gen_forms._courses(college, major)
+                ]
+                self.assertEqual(
+                    gen_forms._college_course_options(college), expected
+                )
+                for option in expected:
+                    major, separator, course = option.partition(" · ")
+                    self.assertEqual(separator, " · ", option)
+                    self.assertIn(major, majors)
+                    self.assertTrue(course.strip(), option)
+
+    def test_every_college_has_majors_but_empty_majors_add_no_course_options(self):
+        for college in self.colleges:
+            majors = gen_forms._majors(college)
+            self.assertTrue(majors, college)
+            options = gen_forms._college_course_options(college)
+            real_courses = sum(
+                len(gen_forms._courses(college, major)) for major in majors
+            )
+            self.assertEqual(len(options), real_courses)
 
     def test_public_template_course_dropdown(self):
         fields = self.fields_of(self.templates[self.public_path])
@@ -146,9 +186,12 @@ class GenFormsTest(unittest.TestCase):
         self.assertNotIn("major", fields)
         self.assertNotIn("course_manual", fields)
         self.assertEqual(
-            [field["id"] for field in gen_forms._parse_template_fields(
-                self.templates[self.public_path]
-            )[0]],
+            [
+                field["id"]
+                for field in gen_forms._parse_template_fields(
+                    self.templates[self.public_path]
+                )[0]
+            ],
             gen_forms.PUBLIC_FIELD_ORDER,
         )
         self.assertEqual(fields["category"]["options"], ["公共课"])
@@ -157,129 +200,127 @@ class GenFormsTest(unittest.TestCase):
         self.assertEqual(len(fields["course"]["options"]), 20)
         self.assertNotIn(gen_forms.OTHER_OPTION, fields["course"]["options"])
 
-    def test_empty_major_has_empty_course_dropdown(self):
-        empty_entries = [entry for entry in self.entries if not entry["courses"]]
-        if not empty_entries:
-            self.skipTest("当前课程树里没有空专业")
-        for entry in empty_entries:
-            with self.subTest(major=entry["major"]):
-                fields = self.fields_of(self.templates[self.path_for(entry)])
-                self.assertEqual(fields["course"]["options"], [])
-                self.assertEqual(
-                    gen_forms._validate_template(
-                        self.path_for(entry).name,
-                        self.templates[self.path_for(entry)],
-                        college=entry["college"],
-                        major=entry["major"],
-                        courses=entry["courses"],
-                    ),
-                    [],
-                )
-
     def test_structure_check_catches_misordered_fields(self):
-        entry = self.entries[0]
-        path = self.path_for(entry)
+        college = self.colleges[0]
+        path = self.path_for(college)
         content = self.templates[path]
         broken = content.replace("    id: college", "    id: wrong_id", 1)
         problems = gen_forms._validate_template(
             path.name,
             broken,
-            college=entry["college"],
-            major=entry["major"],
-            courses=entry["courses"],
+            college=college,
+            majors=gen_forms._majors(college),
+            courses=gen_forms._college_course_options(college),
         )
         self.assertTrue(problems)
         self.assertTrue(any("wrong_id" in item for item in problems))
 
     def test_structure_check_catches_duplicate_ids(self):
-        entry = self.entries[0]
-        path = self.path_for(entry)
+        college = self.colleges[0]
+        path = self.path_for(college)
         content = self.templates[path]
         broken = content.replace("    id: college", "    id: category", 1)
         problems = gen_forms._validate_template(
             path.name,
             broken,
-            college=entry["college"],
-            major=entry["major"],
-            courses=entry["courses"],
+            college=college,
+            majors=gen_forms._majors(college),
+            courses=gen_forms._college_course_options(college),
         )
         self.assertTrue(any("字段 id 重复" in item for item in problems), problems)
 
-    def test_structure_check_catches_prefill_and_course_option_drift(self):
-        entry = next(
-            item for item in self.entries if len(item["courses"]) >= 2
+    def test_structure_check_catches_prefill_and_option_drift(self):
+        college = next(
+            item for item in self.colleges if gen_forms._majors(item)
         )
-        path = self.path_for(entry)
+        path = self.path_for(college)
         content = self.templates[path]
-        kwargs = {
-            "college": entry["college"],
-            "major": entry["major"],
-            "courses": entry["courses"],
-        }
+        majors = gen_forms._majors(college)
+        courses = gen_forms._college_course_options(college)
+        kwargs = {"college": college, "majors": majors, "courses": courses}
 
         wrong_college = content.replace(
-            '      value: "{}"'.format(entry["college"]),
+            '      value: "{}"'.format(college),
             '      value: "不存在的学院"',
             1,
         )
         problems = gen_forms._validate_template(path.name, wrong_college, **kwargs)
         self.assertTrue(any("开课学院 value" in item for item in problems), problems)
 
-        wrong_major = content.replace(
-            '      value: "{}"'.format(entry["major"]),
-            '      value: "不存在的专业"',
-            1,
+        missing_major = content.replace(
+            '        - "{}"\n'.format(majors[0]), "", 1
         )
-        problems = gen_forms._validate_template(path.name, wrong_major, **kwargs)
-        self.assertTrue(any("所属专业 value" in item for item in problems), problems)
-
-        missing_option = content.replace(
-            '        - "{}"\n'.format(entry["courses"][0]), "", 1
-        )
-        problems = gen_forms._validate_template(path.name, missing_option, **kwargs)
+        problems = gen_forms._validate_template(path.name, missing_major, **kwargs)
         self.assertTrue(
-            any("课程名称下拉与真实课程目录不一致" in item for item in problems),
+            any("所属专业下拉与真实专业目录不一致" in item for item in problems),
             problems,
         )
 
-        foreign_option = content.replace(
-            '        - "{}"\n'.format(entry["courses"][0]),
-            '        - "{}"\n        - "别的专业的课"\n'.format(entry["courses"][0]),
-            1,
-        )
-        problems = gen_forms._validate_template(path.name, foreign_option, **kwargs)
-        self.assertTrue(
-            any("课程名称下拉与真实课程目录不一致" in item for item in problems),
-            problems,
-        )
+        if courses:
+            missing_option = content.replace(
+                '        - "{}"\n'.format(courses[0]), "", 1
+            )
+            problems = gen_forms._validate_template(
+                path.name, missing_option, **kwargs
+            )
+            self.assertTrue(
+                any("课程名称下拉与真实课程目录不一致" in item for item in problems),
+                problems,
+            )
 
-        other_option = content.replace(
-            '        - "{}"\n'.format(entry["courses"][0]),
-            '        - "{}"\n        - "其他（在下面写）"\n'.format(
-                entry["courses"][0]
-            ),
-            1,
-        )
-        problems = gen_forms._validate_template(path.name, other_option, **kwargs)
-        self.assertTrue(
-            any("不应包含「其他（在下面写）」" in item for item in problems),
-            problems,
-        )
+            foreign_option = content.replace(
+                '        - "{}"\n'.format(courses[0]),
+                '        - "{}"\n        - "别的专业的课"\n'.format(courses[0]),
+                1,
+            )
+            problems = gen_forms._validate_template(
+                path.name, foreign_option, **kwargs
+            )
+            self.assertTrue(
+                any(
+                    "课程名称下拉与真实课程目录不一致" in item
+                    for item in problems
+                ),
+                problems,
+            )
+
+            other_option = content.replace(
+                '        - "{}"\n'.format(courses[0]),
+                '        - "{}"\n        - "其他（在下面写）"\n'.format(
+                    courses[0]
+                ),
+                1,
+            )
+            problems = gen_forms._validate_template(
+                path.name, other_option, **kwargs
+            )
+            self.assertTrue(
+                any("不应包含「其他（在下面写）」" in item for item in problems),
+                problems,
+            )
+
+            wrong_prefix = content.replace(
+                courses[0],
+                "不存在的专业 · {}".format(courses[0].split(" · ", 1)[-1]),
+                1,
+            )
+            problems = gen_forms._validate_template(
+                path.name, wrong_prefix, **kwargs
+            )
+            self.assertTrue(
+                any("专业前缀" in item for item in problems), problems
+            )
 
     def test_structure_check_catches_description_year_material_and_default_drift(self):
-        entry = next(
-            item for item in self.entries if len(item["courses"]) >= 1
-        )
-        path = self.path_for(entry)
+        college = self.colleges[0]
+        path = self.path_for(college)
         content = self.templates[path]
-        kwargs = {
-            "college": entry["college"],
-            "major": entry["major"],
-            "courses": entry["courses"],
-        }
+        majors = gen_forms._majors(college)
+        courses = gen_forms._college_course_options(college)
+        kwargs = {"college": college, "majors": majors, "courses": courses}
 
         bad_description = content.replace(
-            gen_forms._major_course_description(entry["major"]),
+            gen_forms.COLLEGE_COURSE_DESCRIPTION,
             "随便写的说明",
             1,
         )
@@ -304,13 +345,11 @@ class GenFormsTest(unittest.TestCase):
 
     def test_filename_rule_rejects_forbidden_characters(self):
         self.assertEqual(
-            gen_forms._major_template_filename("测试学院", "测试专业"),
-            "上传资料-测试学院-测试专业.yml",
+            gen_forms._college_template_filename("测试学院"),
+            "上传资料-测试学院.yml",
         )
-        sanitized = gen_forms._major_template_filename(
-            "测试 学院", "专业·方向/实验"
-        )
-        self.assertEqual(sanitized, "上传资料-测试-学院-专业-方向-实验.yml")
+        sanitized = gen_forms._college_template_filename("测试 学院/分部")
+        self.assertEqual(sanitized, "上传资料-测试-学院-分部.yml")
         for name in (
             "上传资料-学院·专业.yml",
             "上传资料-学院 专业.yml",
@@ -344,7 +383,7 @@ class GenFormsTest(unittest.TestCase):
         self.assertTrue(any("开课学院" in item for item in problems), problems)
         self.assertTrue(any("所属专业" in item for item in problems), problems)
 
-    def test_generator_quotes_parentheses_in_college_and_major_names(self):
+    def test_generator_quotes_parentheses_in_college_and_course_names(self):
         with tempfile.TemporaryDirectory(prefix="gen-forms-special-") as tmp:
             root = Path(tmp)
             (root / "scripts").mkdir()
@@ -371,7 +410,7 @@ class GenFormsTest(unittest.TestCase):
                 root
                 / ".github"
                 / "ISSUE_TEMPLATE"
-                / "上传资料-测试(学院)-专业(方向).yml"
+                / "上传资料-测试(学院).yml"
             )
             self.assertTrue(template.is_file(), result.stdout)
             fields, problems = gen_forms._parse_template_fields(
@@ -380,8 +419,10 @@ class GenFormsTest(unittest.TestCase):
             self.assertEqual(problems, [])
             by_id = {field["id"]: field for field in fields}
             self.assertEqual(by_id["college"]["value"], "测试(学院)")
-            self.assertEqual(by_id["major"]["value"], "专业(方向)")
-            self.assertEqual(by_id["course"]["options"], ["课程(方向)"])
+            self.assertEqual(by_id["major"]["options"], ["专业(方向)"])
+            self.assertEqual(
+                by_id["course"]["options"], ["专业(方向) · 课程(方向)"]
+            )
 
     def test_check_cli_detects_drift_and_recovers(self):
         with tempfile.TemporaryDirectory(prefix="gen-forms-cli-") as tmp:
@@ -405,62 +446,69 @@ class GenFormsTest(unittest.TestCase):
 
             generated = run()
             self.assertEqual(generated.returncode, 0, generated.stdout + generated.stderr)
-            self.assertIn("专业模板 1 个 / 公共课 1 门 / 兜底 1 个", generated.stdout)
+            self.assertIn(
+                "学院模板 1 个 / 公共课 1 个 / 兜底 1 个；课程选项总数 2",
+                generated.stdout,
+            )
             self.assertEqual(run("--check").returncode, 0)
 
             template = (
                 root
                 / ".github"
                 / "ISSUE_TEMPLATE"
-                / "上传资料-医学院-护理学.yml"
+                / "上传资料-医学院.yml"
             )
             text = template.read_text(encoding="utf-8")
             template.write_text(
-                text.replace('        - "人体解剖学"', '        - "人体解剖学（旧）"', 1),
+                text.replace(
+                    '        - "护理学 · 人体解剖学"',
+                    '        - "护理学 · 人体解剖学（旧）"',
+                    1,
+                ),
                 encoding="utf-8",
             )
             drifted = run("--check")
             self.assertEqual(drifted.returncode, 1, drifted.stdout + drifted.stderr)
-            self.assertIn("DIFF", drifted.stdout)
+            self.assertIn("DIFF 上传资料-医学院.yml", drifted.stdout)
             self.assertIn("FAIL", drifted.stdout)
 
             self.assertEqual(run().returncode, 0)
             self.assertEqual(run("--check").returncode, 0)
 
-            # 目录里新增专业、模板没更新时，--check 也必须失败。
+            # 目录里新增专业、模板没更新时，--check 也必须失败（学院模板变了）。
             (
                 root / "courses" / "专业课" / "医学院" / "新增专业" / "新课程"
             ).mkdir(parents=True)
             write_generic(root)
             stale = run("--check")
             self.assertEqual(stale.returncode, 1, stale.stdout + stale.stderr)
-            self.assertIn("MISSING 上传资料-医学院-新增专业.yml", stale.stdout)
+            self.assertIn("DIFF 上传资料-医学院.yml", stale.stdout)
 
             self.assertEqual(run().returncode, 0)
             self.assertEqual(run("--check").returncode, 0)
 
-            # 新增课程会改变该专业的课程下拉。
+            # 新增课程会改变该学院的课程下拉。
             (
                 root / "courses" / "专业课" / "医学院" / "护理学" / "新课程"
             ).mkdir()
             stale = run("--check")
             self.assertEqual(stale.returncode, 1, stale.stdout + stale.stderr)
-            self.assertIn("DIFF 上传资料-医学院-护理学.yml", stale.stdout)
+            self.assertIn("DIFF 上传资料-医学院.yml", stale.stdout)
 
             self.assertEqual(run().returncode, 0)
             self.assertEqual(run("--check").returncode, 0)
 
-            # 旧粒度（按学院）模板必须被清理。
+            # 旧粒度（按学院 + 专业）模板必须被清理。
             old = (
                 root
                 / ".github"
                 / "ISSUE_TEMPLATE"
-                / "上传资料-医学院.yml"
+                / "上传资料-医学院-护理学.yml"
             )
             old.write_text(
                 gen_forms.AUTO_HEADER + "\nname: \"旧模板\"\n", encoding="utf-8"
             )
-            self.assertIn("removed 上传资料-医学院.yml", run().stdout)
+            self.assertIn("removed 上传资料-医学院-护理学.yml", run().stdout)
             self.assertFalse(old.exists())
 
 

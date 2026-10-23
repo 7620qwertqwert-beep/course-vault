@@ -138,15 +138,23 @@ jobs:
           DELETED=$(git diff --name-status "$BASE"...HEAD | awk '$1=="D"{print}' | wc -l)
           ADDED=$(git diff --name-status "$BASE"...HEAD | awk '$1=="A"{print}' | wc -l)
 
-          echo "新增 $ADDED 个，删除 $DELETED 个"
+          # 4.0 生成型模板不算“批量破坏”：.github/ISSUE_TEMPLATE/上传资料-*.yml
+          #     完全由 scripts/gen_forms.py 生成，重建时会整批删掉再生成（例如模板粒度调整）。
+          #     这类删除单独计数，不占 4.1 的 20 个额度。
+          DELETED_GENERATED=$(git diff --name-status "$BASE"...HEAD \
+            | awk '$1=="D"{print $2}' | grep -c '^\.github/ISSUE_TEMPLATE/上传资料-' || true)
+          DELETED_MANUAL=$((DELETED - DELETED_GENERATED))
+
+          echo "新增 $ADDED 个，删除 $DELETED 个（其中自动生成模板 $DELETED_GENERATED 个）"
           echo "---- 改动文件 ----"
           git diff --name-only "$BASE"...HEAD
 
           fail=0
 
           # 4.1 批量删除保护：一次删超过 20 个文件必须人工确认
-          if [ "$DELETED" -gt 20 ]; then
-            echo "::error::本次删除了 $DELETED 个文件（上限 20），疑似批量破坏。请拆成多个 PR 或由维护者说明原因。"
+          #     （自动生成的上传模板已在 4.0 里剔除，不计入此处）
+          if [ "$DELETED_MANUAL" -gt 20 ]; then
+            echo "::error::本次删除了 $DELETED_MANUAL 个人工维护的文件（上限 20），疑似批量破坏。请拆成多个 PR 或由维护者说明原因。"
             fail=1
           fi
 

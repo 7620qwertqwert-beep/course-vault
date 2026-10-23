@@ -89,7 +89,11 @@ def make_major_template_body(
     attachments=None,
     confirm=CONFIRM_CHECKED,
 ):
-    """按新的「学院 + 专业」模板渲染正文：学院/专业/课程三处都是纯名。"""
+    """按「学院」模板渲染正文：学院预填，专业/课程都来自下拉。
+
+    课程值既可以是新的「专业 · 课程名」，也可以是旧的纯课程名；
+    两种格式都应该能定位。
+    """
     if attachments is None:
         attachments = "[我的笔记.pdf]({})".format(FAKE_ATTACHMENT_URL)
     return (
@@ -300,7 +304,7 @@ class ImportIssueTest(unittest.TestCase):
         self.assertEqual(len(set(majors)), len(majors))
 
     def test_new_major_template_pure_prefill_locates_course(self):
-        """新专业模板：学院/专业预填纯名、课程来自下拉，仍能定位到四层目录。"""
+        """学院模板：学院/专业预填，课程来自下拉，仍能定位到四层目录。"""
         body = make_major_template_body()
         form = imp._parse_form("[上传] 测试", body)
         self.assertEqual(form["category"], "专业课")
@@ -335,6 +339,98 @@ class ImportIssueTest(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("课程目录不存在", out)
         self.assertIn("人体解剖学", out)
+        self.assertIn("护理学 · 人体解剖学", out)
+
+    def test_college_template_prefixed_course_locates_and_splits_major(self):
+        """学院模板的「专业 · 课程名」能拆出课程名并定位到四层目录。"""
+        body = make_major_template_body(
+            course="康复治疗学 · 康复医学概论"
+        )
+        form = imp._parse_form("[上传] 测试", body)
+        self.assertEqual(form["college"], "医学院")
+        self.assertEqual(form["major"], "康复治疗学")
+        self.assertEqual(form["course"], "康复医学概论")
+
+        self.write_body(body)
+        code, out, _ = self.run_main("--dry-run")
+        self.assertEqual(code, 0, out)
+        self.assertIn(
+            "courses/专业课/医学院/康复治疗学/康复医学概论/笔记", out
+        )
+
+    def test_prefixed_course_accepts_three_separators(self):
+        for template in (
+            "康复治疗学 · 康复医学概论",
+            "康复治疗学/康复医学概论",
+            "康复治疗学-康复医学概论",
+        ):
+            with self.subTest(template=template):
+                form = imp._parse_form(
+                    "", make_major_template_body(course=template)
+                )
+                self.assertEqual(form["major"], "康复治疗学")
+                self.assertEqual(form["course"], "康复医学概论")
+
+    def test_full_course_name_starting_with_major_is_not_split(self):
+        """旧格式纯课名若本身以「专业-」开头，应先按真实课程目录精确匹配。"""
+        self.add_course("医学院", "康复治疗学", "康复治疗学-专题")
+        form = imp._parse_form(
+            "",
+            make_major_template_body(course="康复治疗学-专题"),
+        )
+        self.assertEqual(form["major"], "康复治疗学")
+        self.assertEqual(form["course"], "康复治疗学-专题")
+
+    def test_prefixed_course_major_mismatch_fails_explicitly(self):
+        self.add_course("医学院", "护理学", "人体解剖学")
+        body = make_major_template_body(
+            major="康复治疗学", course="护理学 · 人体解剖学"
+        )
+        with self.assertRaises(imp.ImportFailure) as ctx:
+            imp._parse_form("", body)
+        message = str(ctx.exception)
+        self.assertIn(
+            "课程『人体解剖学』属于专业『护理学』，"
+            "与所选专业『康复治疗学』不一致，请重新选",
+            message,
+        )
+
+    def test_prefixed_course_major_mismatch_is_not_silently_redirected(self):
+        """前缀专业不一致时必须报错，不能把专业悄悄改成前缀里的专业。"""
+        self.add_course("医学院", "护理学", "人体解剖学")
+        self.write_body(
+            make_major_template_body(
+                major="康复治疗学", course="护理学 · 人体解剖学"
+            )
+        )
+        code, out, _ = self.run_main("--dry-run")
+        self.assertEqual(code, 2)
+        self.assertIn("不一致", out)
+        self.assertIn("请重新选", out)
+        self.assertNotIn("courses/专业课/医学院/护理学/", out)
+
+    def test_old_pure_course_name_still_locates(self):
+        """旧 Issue / 通用模板只写纯课程名，仍按「学院 + 专业」定位。"""
+        body = make_major_template_body(course="康复医学概论")
+        form = imp._parse_form("", body)
+        self.assertEqual(form["course"], "康复医学概论")
+        self.write_body(body)
+        code, out, _ = self.run_main("--dry-run")
+        self.assertEqual(code, 0, out)
+        self.assertIn(
+            "courses/专业课/医学院/康复治疗学/康复医学概论/笔记", out
+        )
+
+    def test_missing_prefixed_course_suggests_same_college_courses(self):
+        self.write_body(
+            make_major_template_body(
+                course="康复治疗学 · 康复医学概伦"
+            )
+        )
+        code, out, _ = self.run_main("--dry-run")
+        self.assertEqual(code, 2)
+        self.assertIn("课程目录不存在", out)
+        self.assertIn("康复治疗学 · 康复医学概论", out)
 
     # ---------- 失败路径 ----------
 
