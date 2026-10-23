@@ -17,8 +17,10 @@
 手写值优先于下拉值，支持末尾括号说明。学院模板的专业选项只写纯专业名：
 脚本先用「开课学院」定位学院，再在该学院下找专业；通用模板仍支持
 「学院·专业」「学院/专业」。找不到时用 difflib 给出最接近的 1~3 个候选，
-并标明候选属于哪个学院。容错只影响“找哪个真实目录”，不会放宽上面的
-安全检查。
+并标明候选属于哪个学院。公共课模板的「课程名」是下拉兜底项的补充框：
+下拉选「其他（在下面写）」或为空时使用它，下拉已是具体课程时以缓存的下拉
+值为准，避免切换选项后残留的补充文本覆盖正确课程。容错只影响“找哪个真实
+目录”，不会放宽上面的安全检查。
 
 本地调试：
     IMPORT_ISSUE_BODY_FILE=/tmp/fake_issue.md \
@@ -95,6 +97,9 @@ FIELD_ALIASES = {
     "major": ("所属专业", "专业"),
     "major_manual": ("专业名称", "专业名称（补充）", "补充专业"),
     "course": ("课程名称", "课程名", "课程"),
+    # 公共课模板的下拉兜底项是「其他（在下面写）」，紧跟着的补充框 label
+    # 目前是「课程名」。它同时是 course 的别名，所以公共课分支单独取用。
+    "course_manual": ("课程名", "课程名称（补充）", "课程名（补充）", "补充课程名"),
     "year": ("年份学期", "学期", "年份/学期"),
     "type": ("资料类型", "类型"),
     "attachments": ("附件", "附件区", "附件或链接", "上传附件", "文件"),
@@ -195,9 +200,10 @@ def _section(sections, key):
     for alias in FIELD_ALIASES[key]:
         if alias in sections:
             value = sections[alias]
-            if _is_blank_response(value):
-                return ""
-            return value
+            # 某个别名是空的（GitHub 会渲染成 _No response_）时继续看后面的
+            # 别名，兼容旧模板同时存在「课程名称」和「课程名」的情况。
+            if not _is_blank_response(value):
+                return value
     return ""
 
 
@@ -511,21 +517,70 @@ def _resolve_college(value, label="开课学院"):
 
 
 def _resolve_major_in_college(college, major):
-    """在指定学院下校验专业；失败时给出带学院前缀的近似候选。"""
+    """在指定学院下校验专业；失败时给出本院候选和跨学院归属。
+
+    学院模板只写纯专业名，因此「学院字段写错 + 专业名正确」是很常见的
+    错误。只在写错的学院里找近似专业会给出误导性的候选（例如文学院里
+    的汉语言文学），所以这里同时查全校同名专业，明确指出它属于哪个学院。
+    """
     majors = _major_names(college)
     if major in majors:
         return
-    suggestions = _closest(major, majors)
-    suggestion_text = _suggestion_text(
-        ["{}·{}".format(college, item) for item in suggestions]
+
+    local_suggestions = _closest(major, majors)
+    local_text = _suggestion_text(
+        ["{}·{}".format(college, item) for item in local_suggestions]
     )
-    if suggestion_text:
-        _fail(
-            "在学院「{}」下找不到专业「{}」。你是不是想写：{} ？"
-            "（候选已带上是哪个学院下的）".format(
-                college, major, suggestion_text
+
+    # 第一优先级：专业名本身是存在的，只是学院写错了。
+    exact_pairs = [
+        (other_college, name)
+        for other_college, name in _all_major_pairs()
+        if name == major
+    ]
+    if exact_pairs:
+        correct_text = _suggestion_text(
+            ["{}·{}".format(other_college, name) for other_college, name in exact_pairs]
+        )
+        message = (
+            "在学院「{}」下找不到专业「{}」。专业「{}」实际属于：{}。"
+            "请把「开课学院」改成「{}」，或改用对应学院的模板。".format(
+                college, major, major, correct_text, exact_pairs[0][0]
             )
         )
+        if local_text:
+            message += "（本院可选专业：{}）".format(local_text)
+        _fail(message)
+
+    if local_text:
+        _fail(
+            "在学院「{}」下找不到专业「{}」。你是不是想写：{} ？"
+            "（候选已带上是哪个学院下的）".format(college, major, local_text)
+        )
+
+    # 学院下没有专业目录（或专业名也差得太远）时，再给全校近似候选。
+    all_pairs = _all_major_pairs()
+    global_suggestions = _closest(major, [name for _college, name in all_pairs])
+    if global_suggestions:
+        colleges_by_major = {}
+        for other_college, name in all_pairs:
+            colleges_by_major.setdefault(name, []).append(other_college)
+        suggestion_items = []
+        for name in global_suggestions:
+            for other_college in colleges_by_major.get(name, []):
+                suggestion_items.append("{}·{}".format(other_college, name))
+                if len(suggestion_items) >= 3:
+                    break
+            if len(suggestion_items) >= 3:
+                break
+        if suggestion_items:
+            _fail(
+                "在学院「{}」下找不到专业「{}」。你是不是想写：{} ？"
+                "（候选都带上了所属学院）".format(
+                    college, major, _suggestion_text(suggestion_items)
+                )
+            )
+
     _fail(
         "在学院「{}」下找不到专业「{}」。该学院下暂时没有专业目录，"
         "请联系维护者。".format(college, major)
@@ -654,10 +709,44 @@ def _parse_form(title, body):
     if category not in ("公共课", "专业课"):
         _fail("课程类别只能是「公共课」或「专业课」。")
 
+    if category == "公共课":
+        # 公共课模板的课程名有两处：「课程名称」下拉 + 「课程名」补充框。
+        # 补充框只在选了「其他（在下面写）」或下拉为空时使用；如果下拉
+        # 已经是一个具体课程，保留下拉值，避免用户切换选项后残留的旧补充
+        # 文本把课程覆盖掉。
+        dropdown_course = _section(sections, "course")
+        manual_course = _section(sections, "course_manual")
+        if _is_other_option(dropdown_course):
+            if not manual_course:
+                _fail(
+                    "课程名称选择了「{}」，但「课程名」为空。"
+                    "请在下方的「课程名」里填写具体课程名，或从下拉里选一个。".format(
+                        OTHER_OPTION
+                    )
+                )
+            course_value = manual_course
+        elif dropdown_course:
+            course_value = dropdown_course
+        elif manual_course:
+            course_value = manual_course
+        else:
+            course_value = ""
+        if not course_value:
+            _fail(
+                "Issue 正文缺少必填项「课程名称」：请从下拉里选一门课，"
+                "或在「课程名」里填写仓库里已有的课程名。"
+            )
+        if _is_other_option(course_value):
+            _fail(
+                "「课程名称」不能是「{}」本身；请从下拉里选具体课程，"
+                "或在「课程名」里填写完整课程名。".format(OTHER_OPTION)
+            )
+    else:
+        course_value = _required_section(sections, "course", "课程名称")
     course = _validate_component(
-        _single_line(_required_section(sections, "course", "课程名称"), "课程名称"),
-        "课程名称",
+        _single_line(course_value, "课程名称"), "课程名称"
     )
+
     year = _year_term(_required_section(sections, "year", "年份学期"), body)
     material_type = _single_line(
         _required_section(sections, "type", "资料类型"), "资料类型"

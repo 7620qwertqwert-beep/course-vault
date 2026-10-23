@@ -24,8 +24,9 @@ jobs:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.ref }}
 
       # ---------- 0. 准备可信脚本 ----------
-      # PR：从 base 分支取出 check.sh / build_index.py，放到仓库外运行；
-      #      PR 对 scripts/ 的修改不会被读取或执行。
+      # PR：从 base 分支取出 check.sh / build_index.py / gen_forms.py 到
+      #      $RUNNER_TEMP，再临时复制进 scripts/ 运行；PR 对 scripts/ 的
+      #      修改不会被读取或执行。
       # push：使用本分支脚本。
       - name: 准备可信检查脚本
         shell: bash
@@ -44,19 +45,21 @@ jobs:
 
             git show "$BASE_SHA:scripts/check.sh" > "$trusted/check.sh"
             git show "$BASE_SHA:scripts/build_index.py" > "$trusted/build_index.py"
+            git show "$BASE_SHA:scripts/gen_forms.py" > "$trusted/gen_forms.py"
 
             if ! git diff --quiet "$BASE_SHA...HEAD" -- scripts/; then
-              echo "::warning::本 PR 修改了 scripts/；CI 只执行 base（$BASE_SHA）中的 check.sh 与 build_index.py，PR 内的脚本改动已被忽略。"
+              echo "::warning::本 PR 修改了 scripts/；CI 只执行 base（$BASE_SHA）中的 check.sh、build_index.py 与 gen_forms.py，PR 内的脚本改动已被忽略。"
             fi
             trusted_source="base 分支 $BASE_SHA"
           else
-            cp scripts/check.sh scripts/build_index.py "$trusted/"
+            cp scripts/check.sh scripts/build_index.py scripts/gen_forms.py "$trusted/"
             trusted_source="当前分支"
           fi
 
           test -s "$trusted/check.sh"
           test -s "$trusted/build_index.py"
-          chmod +x "$trusted/check.sh" "$trusted/build_index.py"
+          test -s "$trusted/gen_forms.py"
+          chmod +x "$trusted/check.sh" "$trusted/build_index.py" "$trusted/gen_forms.py"
           echo "TRUSTED_DIR=$trusted" >> "$GITHUB_ENV"
           echo "可信脚本来源：$trusted_source"
 
@@ -83,7 +86,9 @@ jobs:
         shell: bash
         run: |
           set -eu
-          python3 scripts/gen_forms.py --check
+          cp "$TRUSTED_DIR/gen_forms.py" scripts/.ci_trusted_gen_forms.py
+          trap 'rm -f scripts/.ci_trusted_gen_forms.py' EXIT
+          python3 scripts/.ci_trusted_gen_forms.py --check
 
       # ---------- 2. 文件体积 ----------
       - name: 单文件体积检查（上限 50MB）
