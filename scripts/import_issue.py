@@ -14,9 +14,11 @@
   * 扩展名只允许 pdf/doc/docx/ppt/pptx/xls/xlsx/md/txt/jpg/jpeg/png/zip。
 
 学院、专业既可以下拉选择，也可以在「学院名称」「专业名称」补充框里手写；
-手写值优先于下拉值，支持末尾括号说明，专业支持「学院·专业」「学院/专业」
-或只写专业名；校验失败时用 difflib 给出最接近的 1~3 个候选。容错只影响
-“找哪个真实目录”，不会放宽上面的安全检查。
+手写值优先于下拉值，支持末尾括号说明。学院模板的专业选项只写纯专业名：
+脚本先用「开课学院」定位学院，再在该学院下找专业；通用模板仍支持
+「学院·专业」「学院/专业」。找不到时用 difflib 给出最接近的 1~3 个候选，
+并标明候选属于哪个学院。容错只影响“找哪个真实目录”，不会放宽上面的
+安全检查。
 
 本地调试：
     IMPORT_ISSUE_BODY_FILE=/tmp/fake_issue.md \
@@ -508,8 +510,35 @@ def _resolve_college(value, label="开课学院"):
     _fail("找不到学院「{}」。仓库里暂时没有可用的学院目录，请联系维护者。".format(text))
 
 
-def _resolve_major(value):
-    """解析「学院·专业」「学院/专业」或只写专业名，返回 (学院, 专业)。"""
+def _resolve_major_in_college(college, major):
+    """在指定学院下校验专业；失败时给出带学院前缀的近似候选。"""
+    majors = _major_names(college)
+    if major in majors:
+        return
+    suggestions = _closest(major, majors)
+    suggestion_text = _suggestion_text(
+        ["{}·{}".format(college, item) for item in suggestions]
+    )
+    if suggestion_text:
+        _fail(
+            "在学院「{}」下找不到专业「{}」。你是不是想写：{} ？"
+            "（候选已带上是哪个学院下的）".format(
+                college, major, suggestion_text
+            )
+        )
+    _fail(
+        "在学院「{}」下找不到专业「{}」。该学院下暂时没有专业目录，"
+        "请联系维护者。".format(college, major)
+    )
+
+
+def _resolve_major(value, college=None):
+    """解析专业，返回 (学院, 专业)。
+
+    * 值里带「·」或「/」：按「学院·专业」拆分并校验；
+    * 值里只有专业名且给了 college：直接用「college + 专业名」定位；
+    * 值里只有专业名且没给 college：沿用旧的全局唯一匹配逻辑。
+    """
     text = _single_line(value, "所属专业")
 
     # 统一分隔符，并容忍分隔符两侧的空格。
@@ -520,37 +549,26 @@ def _resolve_major(value):
         if len(parts) != 2 or not all(parts):
             _fail(
                 "所属专业格式不正确：{}；请写成「学院·专业」「学院/专业」，"
-                "或只写专业名。".format(text)
+                "或只写专业名（学院模板会自动使用「开课学院」）。".format(text)
             )
-        college = _resolve_college(parts[0], "所属专业中的学院名")
+        parsed_college = _resolve_college(parts[0], "所属专业中的学院名")
         major = _validate_component(parts[1], "所属专业中的专业名")
-        majors = _major_names(college)
-        if major in majors:
-            return college, major
-
-        suggestions = _closest(major, majors)
-        suggestion_text = _suggestion_text(
-            ["{}·{}".format(college, item) for item in suggestions]
-        )
-        if suggestion_text:
-            _fail(
-                "在学院「{}」下找不到专业「{}」。你是不是想写：{} ？".format(
-                    college, major, suggestion_text
-                )
-            )
-        _fail(
-            "在学院「{}」下找不到专业「{}」。该学院下暂时没有专业目录，"
-            "请联系维护者。".format(college, major)
-        )
+        _resolve_major_in_college(parsed_college, major)
+        return parsed_college, major
 
     major = _validate_component(text, "所属专业中的专业名")
+    if college:
+        _resolve_major_in_college(college, major)
+        return college, major
+
     pairs = [(college, name) for college, name in _all_major_pairs() if name == major]
     if len(pairs) == 1:
         return pairs[0]
     if len(pairs) > 1:
         _fail(
             "专业「{}」在多个学院都有，无法自动判断：{}。"
-            "请在「所属专业」里写成「学院·专业」。".format(
+            "请在「所属专业」里写成「学院·专业」，或使用学院模板"
+            "（学院已固定，专业只写专业名）。".format(
                 major,
                 _suggestion_text(
                     ["{}·{}".format(college, name) for college, name in pairs]
@@ -575,7 +593,8 @@ def _resolve_major(value):
     if suggestion_items:
         _fail(
             "找不到专业「{}」。你是不是想写：{} ？"
-            "候选都带上了所属学院，请按「学院·专业」填写。".format(
+            "候选都带上了所属学院；请按「学院·专业」填写，"
+            "或改用学院模板（专业只写专业名）。".format(
                 major, _suggestion_text(suggestion_items)
             )
         )
@@ -664,6 +683,18 @@ def _parse_form(title, body):
     college_source = ""
     major_source = ""
     if category == "专业课":
+        # 先用「开课学院」定位学院；学院模板已预填，专业只写纯专业名。
+        college_value, college_source = _choose_field(
+            sections,
+            "college",
+            "college_manual",
+            "开课学院",
+            "学院名称",
+            "学院",
+        )
+        if college_value:
+            college = _resolve_college(college_value, "开课学院")
+
         major_value, major_source = _choose_field(
             sections,
             "major",
@@ -676,33 +707,22 @@ def _parse_form(title, body):
             _fail(
                 "Issue 正文缺少必填项「所属专业」，请确认使用的是「上传资料」表单。"
             )
-        major_college, major = _resolve_major(major_value)
+        major_college, major = _resolve_major(major_value, college or None)
 
-        college_value, college_source = _choose_field(
-            sections,
-            "college",
-            "college_manual",
-            "开课学院",
-            "学院名称",
-            "学院",
-        )
-        if college_value:
-            college = _resolve_college(college_value, "开课学院")
-            if college != major_college:
-                _fail(
-                    "开课学院与所属专业不一致：开课学院写的是「{}」，"
-                    "专业「{}」实际属于「{}」。请把开课学院改成「{}」，"
-                    "或在所属专业里写成「{}·{}」。".format(
-                        college,
-                        major,
-                        major_college,
-                        major_college,
-                        major_college,
-                        major,
-                    )
+        if college and college != major_college:
+            _fail(
+                "开课学院与所属专业不一致：开课学院写的是「{}」，"
+                "专业「{}」实际属于「{}」。请把开课学院改成「{}」，"
+                "或在所属专业里只写专业名「{}」（不要带学院前缀）。".format(
+                    college,
+                    major,
+                    major_college,
+                    major_college,
+                    major,
                 )
-        else:
-            # 只写专业名也可以：学院从专业解析结果里带出来。
+            )
+        if not college:
+            # 学院为空时（通用模板只写专业名）从专业解析结果里带出学院。
             college = major_college
             college_source = "derived"
 

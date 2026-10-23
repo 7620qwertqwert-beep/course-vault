@@ -28,11 +28,11 @@ body:
     id: major
     attributes:
       label: 所属专业
-      description: "只列出「音乐与舞蹈学院」下的专业；请选择「音乐与舞蹈学院·专业」。"
+      description: "只列出「音乐与舞蹈学院」下的专业；直接选专业名即可，不用带学院前缀。"
       options:
-        - "音乐与舞蹈学院·舞蹈表演"
-        - "音乐与舞蹈学院·音乐学"
-        - "音乐与舞蹈学院·音乐表演"
+        - "舞蹈表演"
+        - "音乐学"
+        - "音乐表演"
     validations:
       required: true
 

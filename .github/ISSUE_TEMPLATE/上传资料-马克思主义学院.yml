@@ -28,9 +28,9 @@ body:
     id: major
     attributes:
       label: 所属专业
-      description: "只列出「马克思主义学院」下的专业；请选择「马克思主义学院·专业」。"
+      description: "只列出「马克思主义学院」下的专业；直接选专业名即可，不用带学院前缀。"
       options:
-        - "马克思主义学院·思想政治教育"
+        - "思想政治教育"
     validations:
       required: true
 
