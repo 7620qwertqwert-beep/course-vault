@@ -834,6 +834,34 @@ class ImportIssueTest(unittest.TestCase):
             )
         )
 
+    def test_s3_asset_redirect_hosts(self):
+        # GitHub 附件 302 后的真实落点（用户上传图片常见）。
+        self.assertTrue(
+            imp._is_official_attachment(
+                "https://github-production-user-asset-6210df.s3.amazonaws.com/"
+                "329902248/682241090-cc6a53af.jpg"
+            )
+        )
+        self.assertTrue(
+            imp._is_official_attachment(
+                "https://github-production-release-asset-2e65be.s3.amazonaws.com/x/y.pdf"
+            )
+        )
+        # 其他 S3 域名 / 伪装域名照旧拒绝。
+        self.assertFalse(
+            imp._is_official_attachment("https://s3.amazonaws.com/evil/x.pdf")
+        )
+        self.assertFalse(
+            imp._is_official_attachment(
+                "https://github-production-user-asset-x.s3.amazonaws.com.evil.com/x.jpg"
+            )
+        )
+        self.assertFalse(
+            imp._is_official_attachment(
+                "http://github-production-user-asset-1.s3.amazonaws.com/x.jpg"
+            )
+        )
+
     def test_log_text_strips_control_characters(self):
         self.assertEqual(
             imp._safe_log_text("正常\n标题\r\x1b[31m"),

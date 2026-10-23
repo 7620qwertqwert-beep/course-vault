@@ -119,6 +119,14 @@ OFFICIAL_ATTACHMENT_HOSTS = {
     "private-user-images.githubusercontent.com",
     "objects.githubusercontent.com",
 }
+# GitHub 官方附件在 302 之后会落到 github-production-*-asset-*.s3[.*].amazonaws.com，
+# 这是 GitHub 自己托管的桶，不限定会直接把用户上传的图片挡在门外。
+# 只放行 github-production-* 这一族桶名，其他 S3 域名照旧拒绝。
+OFFICIAL_ATTACHMENT_HOST_PATTERNS = (
+    re.compile(
+        r"^github-production-[a-z0-9-]+\.s3(?:[.-][a-z0-9-]+)*\.amazonaws\.com$"
+    ),
+)
 
 USER_AGENT = "course-vault-import-bot/1.0 (+https://github.com/)"
 
@@ -279,6 +287,9 @@ def _is_official_attachment(url):
         return False
     host = (parsed.hostname or "").lower()
     if host not in OFFICIAL_ATTACHMENT_HOSTS:
+        # GitHub 的附件会 302 到 github-production-*-asset-*.s3.amazonaws.com。
+        if any(p.match(host) for p in OFFICIAL_ATTACHMENT_HOST_PATTERNS):
+            return True
         return False
     if host in ("github.com", "www.github.com"):
         path = parsed.path
