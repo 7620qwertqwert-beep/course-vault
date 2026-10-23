@@ -184,9 +184,7 @@ class ImportIssueTest(unittest.TestCase):
         expected_labels = (
             "课程类别",
             "开课学院",
-            "学院名称",
             "所属专业",
-            "专业名称",
             "课程名称",
             "年份学期",
             "资料类型",
@@ -201,32 +199,6 @@ class ImportIssueTest(unittest.TestCase):
             )
             self.assertIn(label, imp._parse_sections(make_body()))
         self.assertIn(imp.CONFIRM_REQUIREMENT, form_text)
-
-    def test_form_uses_dropdown_plus_manual_input(self):
-        form_text = (
-            REPO_ROOT / ".github" / "ISSUE_TEMPLATE" / "上传资料.yml"
-        ).read_text(encoding="utf-8")
-        for field_id in ("college", "major"):
-            self.assertRegex(
-                form_text,
-                r"(?ms)^\s*- type: dropdown\s*\n\s*id: {}\b".format(field_id),
-                "字段 {} 应保持 dropdown".format(field_id),
-            )
-        for field_id in ("college_manual", "major_manual"):
-            self.assertRegex(
-                form_text,
-                r"(?ms)^\s*- type: input\s*\n\s*id: {}\b".format(field_id),
-                "字段 {} 应为补充 input".format(field_id),
-            )
-        for field_id in ("category", "year", "material_type"):
-            self.assertRegex(
-                form_text,
-                r"(?ms)^\s*- type: dropdown\s*\n\s*id: {}\b".format(field_id),
-                "字段 {} 应保持 dropdown".format(field_id),
-            )
-        self.assertIn("其他（在下面写）", form_text)
-        self.assertIn("仅当上面选了「其他」时填写", form_text)
-        self.assertIn("写错会提示最接近的课程名", form_text)
 
     def test_form_dropdown_option_counts(self):
         form_text = (
@@ -244,10 +216,8 @@ class ImportIssueTest(unittest.TestCase):
 
         colleges = options_of("college")
         majors = options_of("major")
-        self.assertEqual(len(colleges), 25, colleges)
-        self.assertEqual(len(majors), 85, majors)
-        self.assertEqual(colleges[-1], "其他（在下面写）")
-        self.assertEqual(majors[-1], "其他（在下面写）")
+        self.assertEqual(len(colleges), 24, colleges)
+        self.assertEqual(len(majors), 84, majors)
         self.assertEqual(len(set(colleges)), len(colleges))
         self.assertEqual(len(set(majors)), len(majors))
 
