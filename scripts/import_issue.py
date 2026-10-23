@@ -13,9 +13,10 @@
   * 附件数量 1~5 个，单个不超过 50MB（zip 不超过 20MB），合计不超过 100MB；
   * 扩展名只允许 pdf/doc/docx/ppt/pptx/xls/xlsx/md/txt/jpg/jpeg/png/zip。
 
-学院、专业、课程名允许自由填写：学院支持末尾括号说明，专业支持
-「学院·专业」「学院/专业」或只写专业名；校验失败时用 difflib 给出
-最接近的 1~3 个候选。容错只影响“找哪个真实目录”，不会放宽上面的安全检查。
+学院、专业既可以下拉选择，也可以在「学院名称」「专业名称」补充框里手写；
+手写值优先于下拉值，支持末尾括号说明，专业支持「学院·专业」「学院/专业」
+或只写专业名；校验失败时用 difflib 给出最接近的 1~3 个候选。容错只影响
+“找哪个真实目录”，不会放宽上面的安全检查。
 
 本地调试：
     IMPORT_ISSUE_BODY_FILE=/tmp/fake_issue.md \
@@ -82,10 +83,15 @@ TYPE_TO_FILENAME = {
     "其他": "笔记",
 }
 
+# 下拉框里代表“列表没有，去下面的补充框手写”的选项。
+OTHER_OPTION = "其他（在下面写）"
+
 FIELD_ALIASES = {
     "category": ("课程类别", "类别"),
     "college": ("开课学院", "学院"),
+    "college_manual": ("学院名称", "学院名称（补充）", "补充学院"),
     "major": ("所属专业", "专业"),
+    "major_manual": ("专业名称", "专业名称（补充）", "补充专业"),
     "course": ("课程名称", "课程名", "课程"),
     "year": ("年份学期", "学期", "年份/学期"),
     "type": ("资料类型", "类型"),
@@ -439,6 +445,37 @@ def _suggestion_text(items):
     return "、".join(items)
 
 
+def _is_other_option(value):
+    """下拉框是否选择了「其他（在下面写）」。"""
+    return value in (OTHER_OPTION, "其他")
+
+
+def _choose_field(sections, key, manual_key, label, manual_label, noun):
+    """按“补充框 > 下拉框”的优先级取值，返回 (原值, 来源)。
+
+    来源用于 IMPORT_META 追踪：manual / dropdown / missing。
+    下拉选了「其他」但补充框为空时直接失败，不继续猜。
+    """
+    manual_value = _section(sections, manual_key)
+    dropdown_value = _section(sections, key)
+
+    if manual_value:
+        return manual_value, "manual"
+    if _is_other_option(dropdown_value):
+        _fail(
+            "{label}选择了「{other}」，但「{manual}」为空。"
+            "请在下方的「{manual}」里填写{noun}，或从下拉里选一个。".format(
+                label=label,
+                other=OTHER_OPTION,
+                manual=manual_label,
+                noun=noun,
+            )
+        )
+    if dropdown_value:
+        return dropdown_value, "dropdown"
+    return "", "missing"
+
+
 def _strip_trailing_parenthetical(text):
     """去掉末尾的括号说明，例如「计算机与信息技术学院（软件学院）」。"""
     previous = None
@@ -624,11 +661,31 @@ def _parse_form(title, body):
 
     college = ""
     major = ""
+    college_source = ""
+    major_source = ""
     if category == "专业课":
-        major_college, major = _resolve_major(
-            _required_section(sections, "major", "所属专业")
+        major_value, major_source = _choose_field(
+            sections,
+            "major",
+            "major_manual",
+            "所属专业",
+            "专业名称",
+            "专业",
         )
-        college_value = _section(sections, "college")
+        if not major_value:
+            _fail(
+                "Issue 正文缺少必填项「所属专业」，请确认使用的是「上传资料」表单。"
+            )
+        major_college, major = _resolve_major(major_value)
+
+        college_value, college_source = _choose_field(
+            sections,
+            "college",
+            "college_manual",
+            "开课学院",
+            "学院名称",
+            "学院",
+        )
         if college_value:
             college = _resolve_college(college_value, "开课学院")
             if college != major_college:
@@ -647,6 +704,7 @@ def _parse_form(title, body):
         else:
             # 只写专业名也可以：学院从专业解析结果里带出来。
             college = major_college
+            college_source = "derived"
 
     attachments_text = _required_section(sections, "attachments", "附件")
     all_links = _parse_attachments(attachments_text)
@@ -673,7 +731,9 @@ def _parse_form(title, body):
     return {
         "category": category,
         "college": college,
+        "college_source": college_source,
         "major": major,
+        "major_source": major_source,
         "course": course,
         "year": year,
         "type": material_type,
@@ -1108,6 +1168,11 @@ def _print_meta(form):
     print("IMPORT_META course={}".format(form["course"]))
     print("IMPORT_META year={}".format(form["year"]))
     print("IMPORT_META type={}".format(form["type"]))
+    if form["category"] == "专业课":
+        print("IMPORT_META college={}".format(form["college"]))
+        print("IMPORT_META major={}".format(form["major"]))
+        print("IMPORT_META college_source={}".format(form["college_source"]))
+        print("IMPORT_META major_source={}".format(form["major_source"]))
 
 
 def _move_exclusive(source, destination):
