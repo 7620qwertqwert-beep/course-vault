@@ -3,14 +3,16 @@
 
 > 一门课的资料，不该让每一届都从零攒起。
 
-> 权利人要下架某份材料：[侵权投诉 / 下架请求](https://github.com/7620qwertqwert-beep/course-vault/issues/new?template=侵权投诉.yml)，24 小时内确认、48 小时内处理。
+> 🇨🇳 **打不开 GitHub？** 用国内镜像站：[gitee.com/youliboshi/course-vault](https://gitee.com/youliboshi/course-vault) —— 浏览、下载、上传都在那里，**不需要加速器**。
+>
+> 权利人要下架某份材料：[侵权投诉 / 下架请求](https://gitee.com/youliboshi/course-vault/issues/new)，24 小时内确认、48 小时内处理。
 
 ## ⚡ 30 秒上手
 
 | 我想…… | 三步走 |
 |---|---|
 | **找资料** | ① 打开 [INDEX.md](INDEX.md) → ② 按学院或课名搜索 → ③ 点进课程文件夹下载。 |
-| **传资料** | ① [Issues → New issue → 选你所在学院的模板](https://github.com/7620qwertqwert-beep/course-vault/issues/new/choose)（例如「上传资料 · 医学院」）→ ② 表单里先选专业、再选课程（课程项前面标着专业），拖附件 → ③ Submit；维护者加 `approved` 后机器人自动归档并合并。 |
+| **传资料** | ① 打开 [国内镜像 → Issues → 新建 Issue](https://gitee.com/youliboshi/course-vault/issues/new)（GitHub 能访问的同学也可以用[这里](https://github.com/7620qwertqwert-beep/course-vault/issues/new/choose)）→ ② 选「上传资料」模板，按提示填课程、专业、学期、类型，把文件拖进去 → ③ 提交；维护者确认后归档。 |
 | **有问题** | 到 [Issues](https://github.com/7620qwertqwert-beep/course-vault/issues) 提问，或直接把问题/文件发给维护者。 |
 
 目录已建好，资料靠大家补，卡片里“待补充”的字段欢迎填。
