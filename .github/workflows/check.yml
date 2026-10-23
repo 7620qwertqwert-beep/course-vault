@@ -78,6 +78,13 @@ jobs:
           trap 'rm -f scripts/.ci_trusted_build_index.py' EXIT
           python3 scripts/.ci_trusted_build_index.py --check
 
+      # ---------- 表单模板一致性 ----------
+      - name: 表单模板一致性
+        shell: bash
+        run: |
+          set -eu
+          python3 scripts/gen_forms.py --check
+
       # ---------- 2. 文件体积 ----------
       - name: 单文件体积检查（上限 50MB）
         shell: bash
