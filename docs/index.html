@@ -164,7 +164,7 @@
       if (kw) { $("q").value = kw; doSearch(); }
     })
     .catch(function () {
-      $("stats").textContent = "数据加载失败，请下拉刷新重试";
+      $("stats").innerHTML = "数据加载失败，请下拉刷新重试；反复失败可 <a href=\"upload.html#fb\">反馈</a>";
     });
 
   /* ---------- 学院三级下拉 ---------- */

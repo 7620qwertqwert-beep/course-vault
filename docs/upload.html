@@ -35,6 +35,18 @@
   .result.ok{display:block;background:#eefaf3;color:var(--ok);border:1px solid #cdeedc}
   .result.bad{display:block;background:#fdeef1;color:var(--bad);border:1px solid #f6cdd7}
   .result a{color:inherit;font-weight:600}
+  .fb{background:#fff;border:1px solid var(--line);border-radius:16px;padding:0 15px;margin:0 0 14px;box-shadow:0 2px 10px rgba(226,109,151,.05)}
+  .fbT{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;min-height:44px;padding:0;background:none;border:none;font:inherit;font-size:13px;color:var(--ink);cursor:pointer}
+  .fbT b{color:var(--pink);font-weight:600}
+  .fbA{color:var(--muted);font-size:11px;transition:transform .15s}
+  .fb[data-open="1"] .fbA{transform:rotate(180deg)}
+  .fbB{padding:0 0 12px;text-align:center}
+  .fbB[hidden]{display:none}
+  .fbB img{width:132px;height:auto;display:block;margin:0 auto 8px}
+  .fbM{font-size:12px;color:var(--muted);line-height:1.55}
+  .fbM a{color:var(--pink);text-decoration:none}
+  .fbOne{background:#fff;border:1px solid var(--line);border-radius:16px;padding:0 15px;margin:0 0 14px;text-align:center;font-size:13px;line-height:44px}
+  .fbOne a{color:var(--pink);text-decoration:none;font-weight:600}
   footer{text-align:center;color:var(--muted);font-size:12px;margin-top:20px}
   footer a{color:var(--pink);text-decoration:none}
 </style>
@@ -90,8 +102,16 @@
   <div class="result" id="result"></div>
 </div>
 
+<div class="fb" id="fb" data-expires="2026-10-31T23:59:59+08:00">
+  <button type="button" class="fbT" id="fbT" aria-expanded="false" aria-controls="fbB">遇到问题？<b>进反馈群</b><span class="fbA" id="fbA">▾</span></button>
+  <div class="fbB" id="fbB" hidden>
+    <img id="fbQr" src="assets/wx-qr.jpg" width="132" height="137" alt="资料共享库 bug 反馈群二维码" loading="lazy">
+    <div class="fbM">群码 7 天有效，本张至 2026-10-31；过期或群满，请到 <a href="https://gitee.com/youliboshi/course-vault/issues">仓库提 Issue</a></div>
+  </div>
+</div>
+
 <footer>
-  <a href="https://gitee.com/youliboshi/course-vault">返回资料库首页</a>　·　有问题在 Issues 里说一声
+  <a href="https://gitee.com/youliboshi/course-vault">返回资料库首页</a>　·　<a href="https://gitee.com/youliboshi/course-vault/issues">仓库 Issues</a>
 </footer>
 
 <script>
@@ -272,6 +292,27 @@ $('go').onclick = () => {
     res.className='result bad'; res.textContent='网络中断了，换个网络或稍后再试'; };
   xhr.send(fd);
 };
+
+/* ---------- 反馈群卡片（到期自动降级为 Issue 入口） ---------- */
+(function () {
+  var fb = $("fb");
+  if (!fb) return;
+  var exp = Date.parse(fb.getAttribute("data-expires") || "");
+  if (exp && Date.now() > exp) {
+    fb.className = "fbOne";
+    fb.removeAttribute("data-expires");
+    fb.innerHTML = '遇到问题？<a href="https://gitee.com/youliboshi/course-vault/issues">在仓库提 Issue</a>';
+    return;
+  }
+  var btn = $("fbT"), box = $("fbB");
+  function set(open) {
+    box.hidden = !open;
+    btn.setAttribute("aria-expanded", open ? "true" : "false");
+    fb.setAttribute("data-open", open ? "1" : "0");
+  }
+  btn.addEventListener("click", function () { set(box.hidden); });
+  if (location.hash === "#fb") { set(true); fb.scrollIntoView({ block: "center" }); }
+})();
 </script>
 </body>
 </html>
