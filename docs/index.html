@@ -361,15 +361,16 @@
       '<span class="act">进入 ›</span></a>';
     if (c.f.length) {
       html += '<div class="subfs">';
-      c.f.slice(0, 3).forEach(function (f) {
+      var shown = (r.fhits && r.fhits.length ? r.fhits : c.f).slice(0, 3);
+      shown.forEach(function (f) {
         html += '<a class="fitem" href="' + viewUrl(c, f) + '" target="_blank" rel="noopener">' +
           '<span class="ft">' + esc(f.t) + '</span>' +
           '<span class="fn">' + mark(f.n, key) + '</span>' +
           '<span class="fa">打开</span></a>';
       });
-      if (c.f.length > 3) {
+      if (c.f.length > shown.length) {
         html += '<a class="fmore" href="' + courseUrl(c) + '">共 ' + c.f.length +
-          ' 份，还有 ' + (c.f.length - 3) + ' 份 ›</a>';
+          ' 份，还有 ' + (c.f.length - shown.length) + ' 份 ›</a>';
       }
       html += '</div>';
     }
