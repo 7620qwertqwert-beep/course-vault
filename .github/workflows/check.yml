@@ -115,6 +115,18 @@ jobs:
           set -eu
           python3 scripts/gen_forms.py --check
 
+      # ---------- 1.5 符号链接 ----------
+      - name: 符号链接检查
+        shell: bash
+        run: |
+          set -eu
+          links=$(find courses -type l 2>/dev/null | wc -l)
+          echo "courses/ 下符号链接数：$links"
+          if [ "$links" -gt 0 ]; then
+            find courses -type l | head -20
+            echo "::error::courses/ 下不允许出现符号链接（可能指向仓库外的文件）"
+            exit 1
+          fi
       # ---------- 2. 文件体积 ----------
       - name: 单文件体积检查（上限 50MB）
         shell: bash
