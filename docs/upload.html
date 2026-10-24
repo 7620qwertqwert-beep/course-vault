@@ -193,10 +193,70 @@ $('go').onclick = () => {
   xhr.upload.onprogress = e => {
     if (e.lengthComputable) $('bar').firstElementChild.style.width = (e.loaded/e.total*100).toFixed(0) + '%';
   };
-  xhr.onload = () => {
+  const finishJob = () => {
     $('go').disabled = false;
+    $('bar').style.display = 'none';
+    $('bar').firstElementChild.style.width = '0';
+  };
+  const showJobResult = d => {
+    if (d.ok){
+      res.className = 'result ok';
+      res.innerHTML = '归档完成。' + (d.pr ? '<br>' + d.pr.replace(/(https?:\/\/\S+)/, '<a href="$1" target="_blank">$1</a>') : '');
+    } else {
+      res.className = 'result bad';
+      res.textContent = d.error || '归档失败，请稍后再试';
+    }
+    finishJob();
+  };
+  const pollJob = job => {
+    const started = Date.now();
+    let stopped = false;
+    const stop = () => {
+      if (stopped) return false;
+      stopped = true;
+      clearTimeout(deadline);
+      return true;
+    };
+    const timedOut = () => {
+      if (!stop()) return;
+      res.className = 'result ok';
+      res.textContent = '还在处理，稍后刷新页面看结果（不影响归档）';
+      finishJob();
+    };
+    // 硬性 90 秒上限：即使某次 fetch 一直挂起也不会无限轮询。
+    const deadline = setTimeout(timedOut, 90000);
+    const tick = () => {
+      if (stopped) return;
+      fetch(API + '/job?id=' + encodeURIComponent(job), {cache: 'no-store'})
+        .then(r => r.json())
+        .then(d => {
+          if (stopped) return;
+          if (d && d.state === 'done'){ stop(); showJobResult(d); return; }
+          if (Date.now() - started >= 90000){ timedOut(); return; }
+          setTimeout(tick, 2000);
+        })
+        .catch(() => {
+          if (stopped) return;
+          if (Date.now() - started >= 90000){ timedOut(); return; }
+          setTimeout(tick, 2000);
+        });
+    };
+    tick();
+  };
+
+  xhr.onload = () => {
     let d = {};
     try { d = JSON.parse(xhr.responseText); } catch(e){}
+    if (xhr.status === 202 && d.ok && d.job){
+      res.className = 'result ok';
+      res.textContent = '已接收，正在归档…';
+      $('bar').firstElementChild.style.width = '100%';
+      picked = []; render();
+      $('go').disabled = true;
+      pollJob(d.job);
+      return;
+    }
+    $('go').disabled = false;
     if (xhr.status === 200 && d.ok){
       res.className = 'result ok';
       res.innerHTML = '已提交，正在归档。' + (d.pr ? '<br>' + d.pr.replace(/(https?:\/\/\S+)/, '<a href="$1" target="_blank">$1</a>') : '') +
