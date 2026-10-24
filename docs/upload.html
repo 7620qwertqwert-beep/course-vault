@@ -47,6 +47,7 @@
   .fbM a{color:var(--pink);text-decoration:none}
   .fbOne{background:#fff;border:1px solid var(--line);border-radius:16px;padding:0 15px;margin:0 0 14px;text-align:center;font-size:13px;line-height:44px}
   .fbOne a{color:var(--pink);text-decoration:none;font-weight:600}
+  .presel{margin:0 0 12px;padding:9px 11px;border-radius:10px;background:var(--pink-soft);color:var(--ink);font-size:13px}
   footer{text-align:center;color:var(--muted);font-size:12px;margin-top:20px}
   footer a{color:var(--pink);text-decoration:none}
 </style>
@@ -125,6 +126,30 @@ function opt(sel, text, value){
   sel.appendChild(o);
 }
 
+function preselect(d){
+  let p = '';
+  try { p = new URLSearchParams(location.search).get('course') || ''; } catch (e) { return; }
+  if (!p) return;
+  const parts = p.split('/').filter(Boolean);
+  let col = '', maj = '', crs = '';
+  if (parts[0] === 'courses' && parts[1] === '公共课') { col = '__public__'; crs = parts[2] || ''; }
+  else if (parts.length >= 5) { col = parts[2]; maj = parts[3]; crs = parts[4]; }
+  if (!crs) return;
+  const c = $('college'), mj = $('major'), cs = $('course');
+  c.value = col;
+  c.onchange();
+  if (col !== '__public__') { mj.value = maj; mj.onchange(); }
+  cs.value = crs;
+  const ok = c.value === col && cs.value === crs;
+  const panel = document.querySelector('.panel');
+  const box = document.createElement('div');
+  box.className = 'presel';
+  box.textContent = ok
+    ? '已预选：' + (col === '__public__' ? '公共课' : col + ' \u203a ' + maj) + ' \u203a ' + crs
+    : '没找到你点的那门课（可能刚改名），请重新选一次';
+  panel.insertBefore(box, panel.firstChild);
+}
+
 fetch(API + '/tree').then(r => r.json()).then(d => {
   const c = $('college');
   c.innerHTML = '<option value="">请选择学院</option>';
@@ -154,6 +179,7 @@ fetch(API + '/tree').then(r => r.json()).then(d => {
       (mm ? mm.courses : []).forEach(k => opt(cs, k));
     };
   };
+  preselect(d);
 }).catch(() => {
   $('college').innerHTML = '<option value="">课程数据加载失败，请刷新</option>';
 });
