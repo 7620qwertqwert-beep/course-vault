@@ -7,7 +7,7 @@
 <link rel="icon" href="data:,">
 
 <style>
-  :root{--pink:#e26d8a;--ink:#222;--muted:#7b7b7b;--line:#e6e6e6;--bg:#fafafa}
+  :root{--pink:#c2466b;--ink:#222;--muted:#7b7b7b;--line:#e6e6e6;--bg:#fafafa}
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);
        font:16px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
@@ -42,17 +42,16 @@
   .crumb a{color:var(--pink);text-decoration:none}
   .cname{font-size:19px;font-weight:700;margin:2px 0 0;word-break:break-all}
   .tags{margin:8px 0 2px}
-  .tag{display:inline-block;padding:3px 8px;margin:2px 4px 2px 0;border-radius:8px;
-      background:#fff;border:1px solid var(--line);font-size:12px;color:var(--muted)}
-  .chips{display:flex;flex-wrap:wrap;gap:14px;margin:12px 0 4px}
-  .chip{padding:2px 0;font-size:13.5px;color:var(--muted)}
+  .chips{display:flex;flex-wrap:wrap;align-items:center;gap:0 2px;margin:6px 0 2px}
+  .chiplabel{font-size:12px;color:var(--muted);margin-right:6px}
+  .chip{display:inline-flex;align-items:center;min-height:44px;padding:0 6px;
+      font-size:13.5px;color:var(--muted);cursor:pointer}
   .chip.on{color:var(--pink);font-weight:600}
   .plainlink{font-size:13px;color:var(--ink);text-decoration:none}
   mark{background:#ffe0e8;color:inherit;border-radius:3px}
   footer{margin-top:28px;text-align:center;font-size:13px;color:var(--muted)}
   footer a{color:var(--pink);text-decoration:none;margin:0 6px}
   .note{font-size:12.5px;color:var(--muted);text-align:center;margin-top:10px}
-  .back{display:inline-block;margin:10px 0 0;font-size:14px;color:var(--pink);text-decoration:none}
 </style>
 </head>
 <body>
@@ -255,9 +254,9 @@
       html += '<div class="grp">课程（' + courses.length + '）</div>';
       courses.slice(0, 40).forEach(function (c) {
         html += '<a class="item" href="' + courseUrl(c) + '">' +
-          '<span class="act">进入 ›</span>' +
-          '<div class="n">' + mark(c.n, key) + '</div>' +
-          '<div class="m">' + esc(pathText(c)) + ' · ' + c.f.length + ' 份资料</div></a>';
+          '<div class="body"><div class="n">' + mark(c.n, key) + '</div>' +
+          '<div class="m">' + esc(pathText(c)) + ' · ' + c.f.length + ' 份资料</div></div>' +
+          '<span class="act">进入 ›</span></a>';
       });
       if (courses.length > 40) html += '<div class="empty">只显示前 40 门，换个更具体的关键词</div>';
     }
@@ -297,7 +296,8 @@
     box.innerHTML = head;
 
     function drawChips() {
-      var html = '<span class="chip' + (state.type ? "" : " on") + '" data-t="">全部 ' + c.f.length + '</span>';
+      var html = '<span class="chiplabel">按类型</span>' +
+        '<span class="chip' + (state.type ? "" : " on") + '" data-t="">全部 ' + c.f.length + '</span>';
       TYPES.forEach(function (t) {
         var n = c.f.filter(function (f) { return f.t === t; }).length;
         html += '<span class="chip' + (state.type === t ? " on" : "") + '" data-t="' + t + '">' +
@@ -335,7 +335,7 @@
       TYPES.forEach(function (t) {
         var arr = groups[t];
         if (!arr) return;
-        html += '<div class="grp">' + t + '（' + arr.length + '）</div>';
+        html += '<div class="grp">' + t + (key ? '（' + arr.length + '）' : '') + '</div>';
         arr.forEach(function (f) {
           html += fileItem(c, f, key);
         });
