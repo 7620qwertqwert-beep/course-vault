@@ -120,6 +120,11 @@
     content.innerHTML = '<div class="tip">没有指定文件。<a href="./">回到首页</a></div>';
     return;
   }
+  // 只允许仓库内的 courses/ 路径：拒绝绝对路径、协议相对（//evil.com）、.. 穿越
+  if (p.charAt(0) === "/" || p.indexOf("courses/") !== 0 || p.indexOf("..") >= 0) {
+    content.innerHTML = '<div class="tip">路径不合法，已拒绝。<a href="./">回到首页</a></div>';
+    return;
+  }
   var url = "/" + encPath(p);
   var name = p.split("/").pop();
   document.getElementById("name").textContent = name;
@@ -134,10 +139,23 @@
     content.innerHTML = '<iframe class="pdf" src="' + url + '"></iframe>' +
       '<div class="tip">看不到？<a href="' + url + '" download>下载 PDF</a></div>';
   } else if (ext === "md" || ext === "txt") {
-    fetch(url).then(function (r) { return r.text(); }).then(function (t) {
+    var LIMIT = 5 * 1024 * 1024;
+    fetch(url).then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      var len = parseInt(r.headers.get("content-length") || "0", 10);
+      if (len > LIMIT) throw new Error("TOO_BIG");
+      return r.text();
+    }).then(function (t) {
+      if (t.length > LIMIT) throw new Error("TOO_BIG");
       content.innerHTML = ext === "md" ? mdToHtml(t) : "<pre>" + esc(t) + "</pre>";
-    }).catch(function () {
-      content.innerHTML = '<div class="tip">读取失败，请<a href="' + url + '" download>下载原件</a></div>';
+    }).catch(function (err) {
+      if (err && err.message === "TOO_BIG") {
+        content.innerHTML = '<div class="tip">文件较大（超过 5MB），页面里就不展开了，' +
+          '<a href="' + url + '" download>点这里下载</a>后查看。</div>';
+      } else {
+        content.innerHTML = '<div class="tip">读取失败（' + esc(err && err.message) + '），请' +
+          '<a href="' + url + '" download>下载原件</a></div>';
+      }
     });
   } else {
     content.innerHTML = '<div class="tip">这个类型（.' + esc(ext) + '）浏览器里看不了，' +

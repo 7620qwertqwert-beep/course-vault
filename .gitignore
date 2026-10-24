@@ -42,6 +42,3 @@ id_ed25519*
 mcp_config.json
 *.bak
 *.bak-*
-
-# 搜索索引是构建产物，由服务器 cron 生成
-docs/data/search.json
