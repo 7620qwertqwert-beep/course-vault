@@ -151,15 +151,15 @@
     }).catch(function (err) {
       if (err && err.message === "TOO_BIG") {
         content.innerHTML = '<div class="tip">文件较大（超过 5MB），页面里就不展开了，' +
-          '<a href="' + url + '" download>点这里下载</a>后查看。</div>';
+          '<a href="' + url + '" download>点这里下载</a>后查看；还打不开可 <a href="upload.html#fb">反馈</a>。</div>';
       } else {
         content.innerHTML = '<div class="tip">读取失败（' + esc(err && err.message) + '），请' +
-          '<a href="' + url + '" download>下载原件</a></div>';
+          '<a href="' + url + '" download>下载原件</a>；还不行就 <a href="upload.html#fb">反馈</a></div>';
       }
     });
   } else {
     content.innerHTML = '<div class="tip">这个类型（.' + esc(ext) + '）浏览器里看不了，' +
-      '<a href="' + url + '" download>点这里下载</a>后用对应软件打开。</div>';
+      '<a href="' + url + '" download>点这里下载</a>后用对应软件打开；文件坏了可 <a href="upload.html#fb">反馈</a>。</div>';
   }
 })();
 </script>
