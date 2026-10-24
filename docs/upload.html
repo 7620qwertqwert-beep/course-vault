@@ -74,7 +74,7 @@
   <div class="row">
     <label for="year">年份学期</label>
     <input type="text" id="year" placeholder="2025秋" autocomplete="off">
-    <div class="hint">写成 20xx + 春/秋，例如 2023春、2025秋</div>
+    <div class="hint">写成 20xx + 春/秋，例如 2023春</div>
   </div>
   <div class="row">
     <label for="type">资料类型</label>
@@ -87,7 +87,7 @@
   <div class="row">
     <label for="title">标题（可选）</label>
     <input type="text" id="title" placeholder="如：第一章绪论 / 期中试卷 / 骨骼标本观察" autocomplete="off">
-    <div class="hint">只写这份资料叫什么；文件会命名为「年份-标题」，例如 2025秋-第一章绪论.pdf</div>
+    <div class="hint">只写这份资料叫什么；文件会命名为「年份-标题」，例如 2025秋-骨骼标本观察.pdf</div>
   </div>
   <div class="row">
     <label>文件（最多 5 个，单个不超过 50MB）</label>
@@ -145,7 +145,7 @@ function preselect(d){
   const box = document.createElement('div');
   box.className = 'presel';
   box.textContent = ok
-    ? '已预选：' + (col === '__public__' ? '公共课' : col + ' \u203a ' + maj) + ' \u203a ' + crs
+    ? '已带入课程，填好学期和类型就能提交'
     : '没找到你点的那门课（可能刚改名），请重新选一次';
   panel.insertBefore(box, panel.firstChild);
 }
