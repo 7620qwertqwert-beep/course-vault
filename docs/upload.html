@@ -227,6 +227,108 @@ function render(){
     {textContent:'（点右侧大小可移除）', style:'color:#a8a3b3;font-size:12px;justify-content:flex-end'}));
 }
 
+/* ---------- 任务号持久化 + 结果轮询（顶层：页面加载即生效） ---------- */
+const JOB_KEY = 'cv_job_v1';
+
+function resetJobUI() {
+  $('go').disabled = false;
+  const bar = $('bar');
+  if (bar) {
+    bar.style.display = 'none';
+    if (bar.firstElementChild) bar.firstElementChild.style.width = '0';
+  }
+}
+function remember(job) {
+  try { localStorage.setItem(JOB_KEY, job); } catch (e) {}
+  try {
+    const u = new URL(location); u.searchParams.set('job', job);
+    history.replaceState(null, '', u);
+  } catch (e) {}
+}
+function forget(job) {
+  try { if (localStorage.getItem(JOB_KEY) === job) localStorage.removeItem(JOB_KEY); } catch (e) {}
+  try {
+    const u = new URL(location);
+    if (u.searchParams.get('job') === job) {
+      u.searchParams.delete('job');
+      history.replaceState(null, '', u);
+    }
+  } catch (e) {}
+}
+function showJobResult(d) {
+  const box = $('result');
+  if (d && d.ok) {
+    box.className = 'result ok';
+    box.innerHTML = '归档完成。' + (d.pr
+      ? '<br>' + d.pr.replace(/(https?:\/\/\S+)/, '<a href="$1" target="_blank">$1</a>')
+      : '');
+  } else {
+    box.className = 'result bad';
+    box.textContent = (d && d.error) || '归档失败，请稍后再试';
+  }
+  resetJobUI();
+}
+function pollJob(job) {
+  const box = $('result');
+  remember(job);
+  const started = Date.now();
+  const HARD_LIMIT = 48 * 3600 * 1000;
+  let stopped = false;
+  const stop = () => { if (stopped) return false; stopped = true; return true; };
+  const end = (cls, html) => {
+    if (!stop()) return;
+    box.className = 'result ' + cls;
+    box.innerHTML = html;
+    resetJobUI();
+  };
+  const tick = () => {
+    if (stopped) return;
+    const ctrl = (typeof AbortController === 'function') ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(() => { try { ctrl.abort(); } catch (e) {} }, 15000) : null;
+    const opt = { cache: 'no-store' };
+    if (ctrl) opt.signal = ctrl.signal;
+    fetch(API + '/job?id=' + encodeURIComponent(job), opt)
+      .then(r => {
+        if (timer) clearTimeout(timer);
+        if (r.status === 404) { forget(job); end('bad', '任务记录已过期（结果只保留 48 小时），请重新上传。'); return null; }
+        if (r.status >= 500) { end('bad', '服务端读取任务结果失败，请稍后重新上传。'); return null; }
+        if (!r.ok) { end('bad', '查不到这个任务（HTTP ' + r.status + '）。'); return null; }
+        return r.json().catch(() => { end('bad', '任务结果解析失败，请重新上传。'); return null; });
+      })
+      .then(d => {
+        if (!d || stopped) return;
+        if (d.state === 'done') { forget(job); stop(); showJobResult(d); return; }
+        if (Date.now() - started >= HARD_LIMIT) {
+          end('ok', '任务 ' + job + ' 仍在处理。任务号已记在网址里，稍后刷新本页会自动查结果。');
+          return;
+        }
+        setTimeout(tick, 2000);
+      })
+      .catch(() => {
+        if (timer) clearTimeout(timer);
+        if (stopped) return;
+        if (Date.now() - started >= HARD_LIMIT) {
+          end('ok', '网络不太稳，任务号已记在网址里，稍后刷新本页会自动查结果。');
+          return;
+        }
+        setTimeout(tick, 3000);
+      });
+  };
+  tick();
+}
+// 页面加载就查：网址参数优先，其次本地存储
+(function bootJob() {
+  let boot = '';
+  try { boot = new URLSearchParams(location.search).get('job') || ''; } catch (e) {}
+  if (!boot) { try { boot = localStorage.getItem(JOB_KEY) || ''; } catch (e) {} }
+  if (!/^[a-f0-9]{32}$/.test(boot)) return;
+  const box = $('result');
+  box.className = 'result ok';
+  box.textContent = '正在查询上次的任务…';
+  $('go').disabled = true;
+  pollJob(boot);
+})();
+
 $('go').onclick = () => {
   const college = $('college').value, major = $('major').value,
         course = $('course').value, year = $('year').value.trim(), type = $('type').value;
@@ -254,94 +356,6 @@ $('go').onclick = () => {
     $('bar').style.display = 'none';
     $('bar').firstElementChild.style.width = '0';
   };
-  const showJobResult = d => {
-    if (d.ok){
-      res.className = 'result ok';
-      res.innerHTML = '归档完成。' + (d.pr ? '<br>' + d.pr.replace(/(https?:\/\/\S+)/, '<a href="$1" target="_blank">$1</a>') : '');
-    } else {
-      res.className = 'result bad';
-      res.textContent = d.error || '归档失败，请稍后再试';
-    }
-    finishJob();
-  };
-  /* ---------- 任务号持久化：刷新/超时后还能查 result ---------- */
-  const JOB_KEY = 'cv_job_v1';
-  const remember = job => {
-    try { localStorage.setItem(JOB_KEY, job); } catch (e) {}
-    try {
-      const u = new URL(location); u.searchParams.set('job', job);
-      history.replaceState(null, '', u);
-    } catch (e) {}
-  };
-  const forget = job => {
-    try { if (localStorage.getItem(JOB_KEY) === job) localStorage.removeItem(JOB_KEY); } catch (e) {}
-    try {
-      const u = new URL(location); u.searchParams.delete('job');
-      history.replaceState(null, '', u);
-    } catch (e) {}
-  };
-  const pollJob = job => {
-    remember(job);
-    const started = Date.now();
-    const HARD_LIMIT = 48 * 3600 * 1000;   // 与后端结果保留期一致
-    let stopped = false;
-    const stop = () => {
-      if (stopped) return false;
-      stopped = true;
-      return true;
-    };
-    const giveUp = msg => {
-      if (!stop()) return;
-      res.className = 'result ok';
-      res.innerHTML = msg;
-      $('go').disabled = false;
-    };
-    const tick = () => {
-      if (stopped) return;
-      fetch(API + '/job?id=' + encodeURIComponent(job), {cache: 'no-store'})
-        .then(r => {
-          if (r.status === 404) {
-            if (stop()) {
-              forget(job);
-              res.className = 'result bad';
-              res.innerHTML = '任务记录已过期（结果只保留 48 小时），请重新上传。';
-              $('go').disabled = false;
-            }
-            return null;
-          }
-          return r.json();
-        })
-        .then(d => {
-          if (!d || stopped) return;
-          if (d.state === 'done') { stop(); showJobResult(d); forget(job); return; }
-          if (Date.now() - started >= HARD_LIMIT) {
-            giveUp('任务 ' + job + ' 仍在处理。任务号已记在网址里，稍后刷新本页会自动查结果。');
-            return;
-          }
-          setTimeout(tick, 2000);
-        })
-        .catch(() => {
-          if (stopped) return;
-          if (Date.now() - started >= HARD_LIMIT) {
-            giveUp('网络不太稳，任务号已记在网址里，稍后刷新本页会自动查结果。');
-            return;
-          }
-          setTimeout(tick, 3000);
-        });
-    };
-    tick();
-  };
-  // 打开页面时若网址或本地存着任务号，自动恢复查询
-  (() => {
-    let boot = '';
-    try { boot = new URLSearchParams(location.search).get('job') || ''; } catch (e) {}
-    if (!boot) { try { boot = localStorage.getItem(JOB_KEY) || ''; } catch (e) {} }
-    if (!/^[a-f0-9]{32}$/.test(boot)) return;
-    res.className = 'result ok';
-    res.textContent = '正在查询上次的任务…';
-    $('go').disabled = true;
-    pollJob(boot);
-  })();
 
   xhr.onload = () => {
     let d = {};
