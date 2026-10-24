@@ -50,7 +50,7 @@
   .srchsum{font-size:13px;color:var(--muted);margin:14px 2px 2px}
   .srchsum b{color:var(--ink);font-weight:600}
   .subfs{margin:2px 0 12px 10px;padding:0 14px 0 10px;border-left:2px solid var(--line)}
-  .fitem{display:flex;align-items:center;gap:8px;min-height:44px;padding:0 2px;text-decoration:none;color:inherit;font-size:13.5px}
+  .fitem{display:flex;align-items:center;gap:8px;min-height:44px;padding:0;text-decoration:none;color:inherit;font-size:13.5px}
   .fitem .ft{flex:0 0 auto;font-size:11.5px;color:var(--pink);background:var(--pink-soft);border-radius:4px;padding:1px 5px}
   .fitem .fn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .fitem .fa{flex:0 0 auto;color:var(--muted);font-size:12.5px}
@@ -351,7 +351,7 @@
     e.list.forEach(function (c) { fs += c.f.length; });
     var html = '<details class="entry"><summary>' + esc(e.n) + ' · ' +
       (hasHit ? '还有 ' : '') + e.list.length + ' 门课' +
-      (fs ? ' · ' + fs + ' 份资料' : ' · 均无资料') + '</summary>';
+      (!fs ? ' · 均无资料' : '') + '</summary>';
     e.list.slice(0, 40).forEach(function (c) {
       var right = fs ? (c.f.length ? c.f.length + ' 份' : '暂无') : '›';
       html += '<a class="fitem" href="' + courseUrl(c) + '">' +
@@ -446,21 +446,25 @@
     var html = splitNote;
     if (total) {
       html += '<div class="srchsum">' + (hasF.length
-        ? '共 <b>' + total + '</b> 门匹配：<b>' + hasF.length + '</b> 门有资料，' + noFCnt + ' 门暂无'
+        ? '共 <b>' + total + '</b> 门匹配：<b>' + hasF.length + '</b> 门有资料' +
+        (noFCnt ? '，' + noFCnt + ' 门暂无' : '')
         : '<b>' + total + '</b> 门匹配 · 均暂无资料') + '</div>';
     } else if (hasPath) {
       html += '<div class="srchsum">没有课程名匹配，按下面继续找：</div>';
     }
     if (exEmpty.length) {
+      html += '<div class="grp">精确匹配（暂无资料）</div>';
       exEmpty.forEach(function (r) { html += courseCard(r, tks, true); });
     }
     if (hasF.length) {
       html += '<div class="grp">有资料的课</div>';
       hasF.slice(0, 40).forEach(function (r) { html += courseCard(r, tks, norm(r.c.n) === nk); });
-      if (hasF.length > 40) html += '<div class="fmore">只显示前 40 门，输入更具体的关键词</div>';
+      if (hasF.length > 40) html += '<div class="fmore">共 ' + hasF.length +
+        ' 门，只显示前 40 门，输入更具体的关键词</div>';
     }
     if (noF.length) {
-      html += '<details class="entry"><summary>其他匹配课程均无资料</summary>';
+      html += '<details class="entry"><summary>其他匹配课程均无资料（' + noFCnt + ' 门' +
+        (noFCnt > 40 ? '，列前 40' : '') + '）</summary>';
       noF.slice(0, 40).forEach(function (r) { html += emptyCard(r.c, tks); });
       if (noF.length > 40) html += '<div class="fmore">只列前 40 门，输入更具体的关键词</div>';
       html += '</details>';
