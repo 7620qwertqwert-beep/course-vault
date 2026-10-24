@@ -126,6 +126,28 @@ jobs:
             echo "::error::courses/ 下不允许出现符号链接（可能指向仓库外的文件）"
             exit 1
           fi
+      # ---------- 1.6 文件类型 ----------
+      - name: 文件类型白名单
+        shell: bash
+        run: |
+          set -eu
+          allow="pdf doc docx ppt pptx xls xlsx md txt jpg jpeg png zip"
+          bad=0
+          while IFS= read -r -d '' f; do
+            base="${f##*/}"
+            [ "$base" = "README.md" ] && continue
+            [ "$base" = ".gitkeep" ] && continue
+            ext="${base##*.}"
+            ext=$(printf %s "$ext" | tr A-Z a-z)
+            case " $allow " in
+              *" $ext "*) ;;
+              *)
+                echo "::error file=$f::不在白名单的文件类型：.$ext"
+                bad=1
+                ;;
+            esac
+          done < <(find courses -type f -print0)
+          [ "$bad" -eq 0 ]
       # ---------- 2. 文件体积 ----------
       - name: 单文件体积检查（上限 50MB）
         shell: bash
