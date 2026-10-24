@@ -11,7 +11,6 @@
   body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;line-height:1.55;padding:0 14px 48px}
   header{padding:22px 0 8px;text-align:center}
   h1{margin:0;font-size:21px}
-  h1 span{color:var(--pink)}
   .sub{margin:6px 0 0;color:var(--muted);font-size:13px}
   .panel{background:#fff;border:1px solid var(--line);border-radius:16px;padding:15px;margin:14px 0;box-shadow:0 2px 10px rgba(226,109,151,.05)}
   label{display:block;font-size:13px;color:var(--muted);margin:0 0 6px}
@@ -48,24 +47,24 @@
 
 <div class="panel">
   <div class="row">
-    <label for="college">① 学院</label>
+    <label for="college">学院</label>
     <select id="college" disabled><option value="">加载中…</option></select>
   </div>
   <div class="row">
-    <label for="major">② 专业</label>
+    <label for="major">专业</label>
     <select id="major" disabled><option value="">先选学院</option></select>
   </div>
   <div class="row">
-    <label for="course">③ 课程</label>
+    <label for="course">课程</label>
     <select id="course" disabled><option value="">先选专业</option></select>
   </div>
   <div class="row">
-    <label for="year">④ 年份学期</label>
+    <label for="year">年份学期</label>
     <input type="text" id="year" placeholder="2025秋" autocomplete="off">
     <div class="hint">写成 20xx + 春/秋，例如 2023春、2025秋</div>
   </div>
   <div class="row">
-    <label for="type">⑤ 资料类型</label>
+    <label for="type">资料类型</label>
     <select id="type">
       <option value="">请选择</option>
       <option>笔记</option><option>课件</option><option>试卷</option>
@@ -73,12 +72,12 @@
     </select>
   </div>
   <div class="row">
-    <label for="title">⑥ 标题（可选）</label>
+    <label for="title">标题（可选）</label>
     <input type="text" id="title" placeholder="如：第一章绪论 / 期中试卷 / 骨骼标本观察" autocomplete="off">
     <div class="hint">只写这份资料叫什么；文件会命名为「年份-标题」，例如 2025秋-第一章绪论.pdf</div>
   </div>
   <div class="row">
-    <label>⑦ 文件（最多 5 个，单个不超过 50MB）</label>
+    <label>文件（最多 5 个，单个不超过 50MB）</label>
     <div class="drop" id="drop">
       点这里选文件，或把文件<b>拖到这里</b><br>
       <span style="font-size:12px">pdf / doc / ppt / xls / md / txt / jpg / png / zip</span>
