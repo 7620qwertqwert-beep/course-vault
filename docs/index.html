@@ -47,6 +47,20 @@
   .chip{display:inline-flex;align-items:center;min-height:44px;padding:0 6px;
       font-size:13.5px;color:var(--muted);cursor:pointer}
   .chip.on{color:var(--pink);font-weight:600}
+  .srchsum{font-size:13px;color:var(--muted);margin:14px 2px 2px}
+  .srchsum b{color:var(--ink);font-weight:600}
+  .subfs{margin:2px 0 12px 10px;padding-left:10px;border-left:2px solid var(--line)}
+  .fitem{display:flex;align-items:center;gap:8px;min-height:38px;padding:0 2px;text-decoration:none;color:inherit;font-size:13.5px}
+  .fitem .ft{flex:0 0 auto;font-size:11.5px;color:var(--pink);background:var(--pink-soft);border-radius:4px;padding:1px 5px}
+  .fitem .fn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .fitem .fa{flex:0 0 auto;color:var(--muted);font-size:12.5px}
+  .fmore{font-size:12.5px;color:var(--muted);padding:6px 2px;text-decoration:none;display:block}
+  .entry{background:#fff;border:1px solid var(--line);border-radius:12px;margin:8px 0;padding:0 13px}
+  .entry summary{min-height:44px;display:flex;align-items:center;font-size:13.5px;cursor:pointer;list-style:none}
+  .entry summary::-webkit-details-marker{display:none}
+  .entry summary::after{content:"\25be";margin-left:auto;color:var(--muted);font-size:11px}
+  .exact{font-size:11px;color:var(--pink);border:1px solid var(--pink);border-radius:4px;padding:0 4px;font-weight:400;margin-left:4px}
+  .gone{color:var(--muted);font-size:12.5px;margin-left:6px}
   .plainlink{font-size:13px;color:var(--ink);text-decoration:none}
   mark{background:#ffe0e8;color:inherit;border-radius:3px}
   footer{margin-top:28px;text-align:center;font-size:13px;color:var(--muted)}
@@ -142,11 +156,82 @@
   }
   function mark(text, key) {
     var safe = esc(text);
-    if (!key) return safe;
-    var i = safe.toLowerCase().indexOf(esc(key).toLowerCase());
-    if (i < 0) return safe;
-    var len = esc(key).length;
-    return safe.slice(0, i) + "<mark>" + safe.slice(i, i + len) + "</mark>" + safe.slice(i + len);
+    var list = [].concat(key).filter(function (k) { return k; });
+    if (!list.length) return safe;
+    var low = safe.toLowerCase(), best = -1, bl = 0;
+    list.forEach(function (k) {
+      var kk = esc(String(k)).toLowerCase();
+      var i = low.indexOf(kk);
+      if (i >= 0 && (best < 0 || i < best)) { best = i; bl = kk.length; }
+    });
+    if (best < 0) return safe;
+    return safe.slice(0, best) + "<mark>" + safe.slice(best, best + bl) + "</mark>" + safe.slice(best + bl);
+  }
+
+
+  /* ---------- 搜索：归一化 / 分词 / 打分 ---------- */
+  // 统一：NFKC（全角转半角）、小写、去装饰标点、把 ／›-_ 当分隔符
+  var DECOR = /[《》〈〉「」『』【】（）()\[\]{}"'“”‘’·、,，。！？!?：:；;]/g;
+  function norm(s) {
+    s = String(s == null ? "" : s);
+    if (s.normalize) s = s.normalize("NFKC");
+    return s.toLowerCase()
+      .replace(DECOR, " ")
+      .replace(/[／\\]/g, "/")
+      .replace(/›/g, " ")
+      .replace(/[_\-]+/g, " ")
+      .replace(/\s+/g, " ")
+      .replace(/^ | $/g, "");
+  }
+  function tokens(q) {
+    var s = norm(q);
+    if (!s) return [];
+    return s.split(/[\s\/]+/).filter(function (t) { return t; });
+  }
+  // 单个 token 对课名的得分：完全相同 > 前缀 > 包含（含覆盖率与位置修正）
+  function baseScore(n, tk) {
+    var p = n.indexOf(tk);
+    if (p < 0) return 0;
+    if (n === tk) return 1000;
+    if (p === 0) return 760;
+    var cov = tk.length / n.length;
+    var b = 400 + 200 * cov - Math.min(p, 20);
+    if (p > 0 && n.charAt(p - 1) === " ") b += 60;
+    return b;
+  }
+  // 返回 null 表示不匹配；否则给出分数与命中的资料
+  function matchCourse(c, tks) {
+    var n = norm(c.n), m = norm(c.m || ""), col = norm(c.c);
+    var nameHit = false, fileHit = false, typeHit = false, majorHit = false, colHit = false;
+    for (var i = 0; i < tks.length; i++) {
+      var tk = tks[i], any = false;
+      if (n.indexOf(tk) >= 0) { nameHit = true; any = true; }
+      if (m.indexOf(tk) >= 0) { majorHit = true; any = true; }
+      if (col.indexOf(tk) >= 0) { colHit = true; any = true; }
+      for (var j = 0; j < c.f.length; j++) {
+        var f = c.f[j];
+        if (norm(f.n).indexOf(tk) >= 0) { fileHit = true; any = true; }
+        else if (norm(f.t).indexOf(tk) >= 0) { typeHit = true; any = true; }
+      }
+      if (!any) return null;
+    }
+    // 只有学院/专业命中、且课名和资料都没中 → 不算课程结果（走专业/学院入口）
+    if (!(nameHit || fileHit || typeHit)) return null;
+    var score = 0;
+    for (var k = 0; k < tks.length; k++) score = Math.max(score, baseScore(n, tks[k]));
+    if (!nameHit) score = Math.max(score, fileHit ? 320 : 120);
+    score += (c.f.length ? 120 : 0) + 10 * Math.min(c.f.length, 5);
+    if (majorHit) score += 80;
+    if (colHit) score += 20;
+    var fhits = [];
+    c.f.forEach(function (f) {
+      var fn = norm(f.n), ft = norm(f.t);
+      for (var i = 0; i < tks.length; i++) {
+        if (fn.indexOf(tks[i]) >= 0 || ft.indexOf(tks[i]) >= 0) { fhits.push(f); return; }
+      }
+    });
+    if (!fhits.length) fhits = c.f.slice();
+    return { c: c, score: score, nameHit: nameHit, fhits: fhits };
   }
 
   /* ---------- 数据加载 ---------- */
@@ -228,53 +313,179 @@
   }
 
   /* ---------- 全站搜索（课程 + 资料） ---------- */
+  var lastKey = "", sTimer = null, composing = false;
+  function hitsWithF(c) { return c.f.length > 0; }
+
+  function courseCard(r, key, exact) {
+    var c = r.c;
+    var html = '<a class="item" href="' + courseUrl(c) + '">' +
+      '<div class="body"><div class="n">' + mark(c.n, key) +
+      (exact ? '<span class="exact">精确匹配</span>' : '') + '</div>' +
+      '<div class="m">' + esc(pathText(c)) + ' · ' +
+      (c.f.length ? c.f.length + ' 份资料' : '暂无资料') + '</div></div>' +
+      '<span class="act">进入 ›</span></a>';
+    if (c.f.length) {
+      html += '<div class="subfs">';
+      r.fhits.slice(0, 3).forEach(function (f) {
+        html += '<a class="fitem" href="' + viewUrl(c, f) + '" target="_blank" rel="noopener">' +
+          '<span class="ft">' + esc(f.t) + '</span>' +
+          '<span class="fn">' + mark(f.n, key) + '</span>' +
+          '<span class="fa">打开</span></a>';
+      });
+      if (r.fhits.length > 3) {
+        html += '<a class="fmore" href="' + courseUrl(c) + '">还有 ' + (r.fhits.length - 3) + ' 份，进这门课看 ›</a>';
+      }
+      html += '</div>';
+    }
+    return html;
+  }
+  function emptyCard(c, key) {
+    return '<a class="item" href="' + courseUrl(c) + '">' +
+      '<div class="body"><div class="n">' + mark(c.n, key) + '</div>' +
+      '<div class="m">' + esc(pathText(c)) + ' · 暂无人上传</div></div>' +
+      '<span class="act">去看看 ›</span></a>';
+  }
+  function entryHtml(kind, e, key) {
+    var fs = 0;
+    e.list.forEach(function (c) { fs += c.f.length; });
+    var html = '<details class="entry"><summary>' + kind + ' · ' + esc(e.n) +
+      ' · ' + e.list.length + ' 门课 · ' + fs + ' 份资料</summary>';
+    e.list.slice(0, 40).forEach(function (c) {
+      html += '<a class="fitem" href="' + courseUrl(c) + '">' +
+        '<span class="fn">' + esc(c.n) + '<span class="gone">' + esc(c.m ? c.m : c.c) + '</span></span>' +
+        '<span class="fa">' + (c.f.length ? c.f.length + ' 份' : '空') + '</span></a>';
+    });
+    if (e.list.length > 40) html += '<div class="fmore">只列前 40 门，输入更具体的关键词</div>';
+    html += '</details>';
+    return html;
+  }
+
+  function searchAll(tks) {
+    var hit = [], majors = {}, colleges = {}, fileCnt = 0;
+    DATA.courses.forEach(function (c) {
+      var r = matchCourse(c, tks);
+      if (r) { hit.push(r); fileCnt += r.fhits.length; return; }
+      var m = norm(c.m || ""), col = norm(c.c);
+      var pathStr = col + " " + m;
+      var ok = tks.length && tks.every(function (t) { return pathStr.indexOf(t) >= 0; });
+      if (!ok) return;
+      var inM = c.m && tks.every(function (t) { return m.indexOf(t) >= 0; });
+      var inC = tks.every(function (t) { return col.indexOf(t) >= 0; });
+      if (inM) {
+        (majors[c.m] = majors[c.m] || { n: c.m, list: [] }).list.push(c);
+      } else if (inC) {
+        (colleges[c.c] = colleges[c.c] || { n: c.c, list: [] }).list.push(c);
+      } else if (c.m) {
+        (majors[c.m] = majors[c.m] || { n: c.m, list: [] }).list.push(c);
+      } else {
+        (colleges[c.c] = colleges[c.c] || { n: c.c, list: [] }).list.push(c);
+      }
+    });
+    return { hit: hit, majors: majors, colleges: colleges, fileCnt: fileCnt };
+  }
+
   function doSearch() {
-    var key = $("q").value.trim();
+    var raw = $("q").value.trim();
     var box = $("results");
-    if (!key) {
+    if (!raw) {
       box.innerHTML = "";
       $("browse").style.display = "";
+      lastKey = "";
       return;
     }
+    if (raw === lastKey) return;
+    lastKey = raw;
     $("browse").style.display = "none";
-
-    var courses = [], files = [];
-    DATA.courses.forEach(function (c) {
-      var label = pathText(c) + " " + c.n;
-      if (label.toLowerCase().indexOf(key.toLowerCase()) >= 0) courses.push(c);
-      c.f.forEach(function (f) {
-        if (f.n.toLowerCase().indexOf(key.toLowerCase()) >= 0) {
-          files.push({ c: c, f: f });
+    var tks = tokens(raw);
+    var nk = norm(raw);
+    var res = searchAll(tks);
+    var splitNote = "";
+    // 零结果且是一个连着的长串时，试着从中间拆成两段（如「解剖报告」→ 解剖 + 报告）
+    var noRes = !res.hit.length && !Object.keys(res.majors).length && !Object.keys(res.colleges).length;
+    if (noRes && tks.length === 1 && tks[0].length >= 3) {
+      var one = tks[0];
+      for (var si = 2; si <= one.length - 1; si++) {
+        var cand = [one.slice(0, si), one.slice(si)];
+        var r2 = searchAll(cand);
+        if (r2.hit.length) {
+          res = r2;
+          tks = cand;
+          splitNote = '<div class="srchsum">没找到连着的「' + esc(raw) + '」，按「' +
+            esc(cand[0]) + ' + ' + esc(cand[1]) + '」拆开找了：</div>';
+          break;
         }
-      });
+      }
+    }
+    var hit = res.hit, majors = res.majors, colleges = res.colleges, fileCnt = res.fileCnt;
+    hit.sort(function (a, b) {
+      var d = b.score - a.score;
+      if (d) return d;
+      var fa = hitsWithF(a.c) ? 1 : 0, fb = hitsWithF(b.c) ? 1 : 0;
+      if (fa !== fb) return fb - fa;
+      if (a.c.n.length !== b.c.n.length) return a.c.n.length - b.c.n.length;
+      return a.c.p < b.c.p ? -1 : a.c.p > b.c.p ? 1 : 0;
     });
+    var withF = [], noF = [], exact = [];
+    hit.forEach(function (r) {
+      if (norm(r.c.n) === nk) exact.push(r);
+      else if (hitsWithF(r.c)) withF.push(r);
+      else noF.push(r);
+    });
+    var majList = Object.keys(majors).map(function (k) { return majors[k]; });
+    var colList = Object.keys(colleges).map(function (k) { return colleges[k]; });
+    majList.sort(function (a, b) { return b.list.length - a.list.length; });
+    colList.sort(function (a, b) { return b.list.length - a.list.length; });
 
-    var html = "";
-    if (courses.length) {
-      html += '<div class="grp">课程（' + courses.length + '）</div>';
-      courses.slice(0, 40).forEach(function (c) {
-        html += '<a class="item" href="' + courseUrl(c) + '">' +
-          '<div class="body"><div class="n">' + mark(c.n, key) + '</div>' +
-          '<div class="m">' + esc(pathText(c)) + ' · ' + c.f.length + ' 份资料</div></div>' +
-          '<span class="act">进入 ›</span></a>';
-      });
-      if (courses.length > 40) html += '<div class="empty">只显示前 40 门，换个更具体的关键词</div>';
+    var html = splitNote;
+    if (hit.length || majList.length || colList.length) {
+      html += '<div class="srchsum">有资料 <b>' + (withF.length + exact.filter(function (r) { return r.c.f.length; }).length) +
+        '</b> 门 · 全部匹配 <b>' + hit.length + '</b> 门 · 命中资料 <b>' + fileCnt + '</b> 份</div>';
     }
-    if (files.length) {
-      html += '<div class="grp">资料（' + files.length + '）</div>';
-      files.slice(0, 60).forEach(function (it) {
-        html += fileItem(it.c, it.f, key, pathText(it.c) + " › " + it.c.n);
-      });
+    if (exact.length) {
+      html += '<div class="grp">精确匹配</div>';
+      exact.forEach(function (r) { html += courseCard(r, tks, true); });
     }
-    if (!courses.length && !files.length) {
-      html = '<div class="empty">没有找到「' + esc(key) + '」。<br>' +
-        '试试课程名的一部分（如「解剖」），或去 <a href="' + REPO + '">仓库首页</a> 按目录翻。</div>';
+    if (withF.length) {
+      html += '<div class="grp">有资料的课（' + withF.length + '）</div>';
+      withF.slice(0, 40).forEach(function (r) { html += courseCard(r, tks, false); });
+      if (withF.length > 40) html += '<div class="fmore">只显示前 40 门，输入更具体的关键词</div>';
+    }
+    if (noF.length) {
+      html += '<details class="entry"><summary>其他匹配课程 · ' + noF.length + ' 门暂无资料</summary>';
+      noF.slice(0, 40).forEach(function (r) { html += emptyCard(r.c, tks); });
+      if (noF.length > 40) html += '<div class="fmore">只列前 40 门，输入更具体的关键词</div>';
+      html += '</details>';
+    }
+    if (majList.length) {
+      html += '<div class="grp">按专业</div>';
+      majList.forEach(function (e) { html += entryHtml("专业", e, tks); });
+    }
+    if (colList.length) {
+      html += '<div class="grp">按学院</div>';
+      colList.forEach(function (e) { html += entryHtml("学院", e, tks); });
+    }
+    if (!html) {
+      html = '<div class="empty">没有找到「' + esc(raw) + '」。<br>' +
+        '试试课程名的一部分（如「解剖」）、去掉多余的字，或者：<br>' +
+        '<a href="upload.html">去上传一份</a> · <a href="#/">按学院浏览</a></div>';
     }
     box.innerHTML = html;
   }
-  $("q").addEventListener("input", function () { if (!this.value.trim()) doSearch(); });
-  $("q").addEventListener("keydown", function (e) { if (e.key === "Enter") { doSearch(); this.blur(); } });
-  $("go").addEventListener("click", function () { doSearch(); });
+
+  function scheduleSearch() {
+    if (sTimer) clearTimeout(sTimer);
+    sTimer = setTimeout(function () { sTimer = null; doSearch(); }, 150);
+  }
+  $("q").addEventListener("compositionstart", function () { composing = true; });
+  $("q").addEventListener("compositionend", function () { composing = false; scheduleSearch(); });
+  $("q").addEventListener("input", function () {
+    if (!this.value.trim()) { doSearch(); return; }
+    if (!composing) scheduleSearch();
+  });
+  $("q").addEventListener("keydown", function (e) {
+    if (e.key === "Enter") { if (sTimer) clearTimeout(sTimer); doSearch(); this.blur(); }
+  });
+  $("go").addEventListener("click", function () { if (sTimer) clearTimeout(sTimer); doSearch(); });
 
   /* ---------- 课程详情（类型筛选 + 本课搜索） ---------- */
   var state = { type: "" };
@@ -321,8 +532,8 @@
       var groups = {}, total = 0;
       c.f.forEach(function (f) {
         if (state.type && f.t !== state.type) return;
-        if (key && (f.n.toLowerCase().indexOf(key.toLowerCase()) < 0 &&
-                    f.t.toLowerCase().indexOf(key.toLowerCase()) < 0)) return;
+        if (key && (norm(f.n).indexOf(norm(key)) < 0 &&
+                    norm(f.t).indexOf(norm(key)) < 0)) return;
         (groups[f.t] = groups[f.t] || []).push(f);
         total++;
       });
@@ -330,7 +541,7 @@
       if (!total) {
         html = '<div class="empty">' + (key ? '这里没有匹配的资料' :
           (state.type ? '这个类型下还没有资料，欢迎第一个上传' : '这门课还没有资料，欢迎第一个上传')) +
-          '<br><a href="upload.html">去上传</a></div>';
+          '<br><a href="upload.html?course=' + encodeURIComponent(c.p) + '">去上传</a></div>';
       }
       TYPES.forEach(function (t) {
         var arr = groups[t];
