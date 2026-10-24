@@ -865,7 +865,32 @@ def _safe_comment(number, text):
 # 主流程
 # --------------------------------------------------------------------------
 
+_LOCK_PATH = "/var/lock/cv_repo.lock"
+
+
+def _acquire_repo_lock(wait_seconds=300):
+    """拿仓库写锁；与 cv_pull.py 互斥。超时返回 None（调用方视为跳过本轮）。"""
+    import fcntl
+    import time as _time
+
+    fh = open(_LOCK_PATH, "w")
+    deadline = _time.time() + wait_seconds
+    while True:
+        try:
+            fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return fh
+        except OSError:
+            if _time.time() > deadline:
+                fh.close()
+                return None
+            _time.sleep(1)
+
+
 def main():
+    _lock = _acquire_repo_lock()
+    if _lock is None:
+        print("等仓库锁超时，本轮跳过")
+        return 0
     global _RUN_START
     _RUN_START = time.monotonic()
 
