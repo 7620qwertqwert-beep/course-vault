@@ -158,17 +158,20 @@
     return c.m ? (c.c + " › " + c.m) : "公共课";
   }
   function mark(text, key) {
-    var safe = esc(text);
+    var raw = String(text == null ? "" : text);
     var list = [].concat(key).filter(function (k) { return k; });
-    if (!list.length) return safe;
-    var low = safe.toLowerCase(), best = -1, bl = 0;
+    if (!list.length) return esc(raw);
+    // 在原文上定位（不能在 esc 之后的串里找，否则 '&amp;' 里的 amp 会被误高亮），
+    // 再把三段分别转义，HTML 实体不会被切坏。
+    var low = raw.toLowerCase(), best = -1, bl = 0;
     list.forEach(function (k) {
-      var kk = esc(String(k)).toLowerCase();
+      var kk = String(k).toLowerCase();
       var i = low.indexOf(kk);
       if (i >= 0 && (best < 0 || i < best)) { best = i; bl = kk.length; }
     });
-    if (best < 0) return safe;
-    return safe.slice(0, best) + "<mark>" + safe.slice(best, best + bl) + "</mark>" + safe.slice(best + bl);
+    if (best < 0) return esc(raw);
+    return esc(raw.slice(0, best)) + "<mark>" + esc(raw.slice(best, best + bl)) +
+      "</mark>" + esc(raw.slice(best + bl));
   }
 
 
@@ -330,20 +333,20 @@
     if (!box) return;
     var items = [];
     DATA.courses.forEach(function (c) {
-      c.f.forEach(function (f) { if (f.u) items.push({ c: c, f: f }); });
+      c.f.forEach(function (f) { items.push({ c: c, f: f, u: f.u || 0 }); });
     });
     if (!items.length) {
       box.innerHTML = '<div class="recentempty">库里还没有资料，第一份等你来传：' +
         '<a href="upload.html">去上传</a></div>';
       return;
     }
-    items.sort(function (a, b) { return b.f.u - a.f.u; });
+    items.sort(function (a, b) { return b.u - a.u; });
     var html = '<div class="grp">最近更新</div>';
     items.slice(0, 5).forEach(function (it) {
       html += '<a class="fitem" href="' + viewUrl(it.c, it.f) + '" target="_blank" rel="noopener">' +
         '<span class="ft">' + esc(it.f.t) + '</span>' +
         '<span class="fn">' + esc(it.c.n) + ' · ' + esc(it.f.n) + '</span>' +
-        '<span class="fa">' + relTime(it.f.u) + '</span></a>';
+        '<span class="fa">' + (it.u ? relTime(it.u) : '') + '</span></a>';
     });
     box.innerHTML = html;
   }
@@ -439,12 +442,18 @@
     lastKey = raw;
     $("browse").style.display = "none";
     if ($("recent")) $("recent").style.display = "none";
+    // 超长查询直接拒绝：零结果拆分是 O(长度 × 课程数)，1000 字能冻住主线程 3 秒以上
+    if (raw.length > 64) {
+      box.innerHTML = '<div class="empty">关键词太长了（' + raw.length +
+        ' 字），搜索最多 64 个字，换短一点的课程名或文件名试试。</div>';
+      return;
+    }
     var tks = tokens(raw);
     var nk = norm(raw);
     var res = searchAll(tks);
     var splitNote = "";
     var noRes = !res.hit.length && !Object.keys(res.majors).length && !Object.keys(res.colleges).length;
-    if (noRes && tks.length === 1 && tks[0].length >= 3) {
+    if (noRes && tks.length === 1 && tks[0].length >= 3 && tks[0].length <= 24) {
       var one = tks[0];
       for (var si = 2; si <= one.length - 1; si++) {
         var cand = [one.slice(0, si), one.slice(si)];
@@ -502,8 +511,8 @@
         ' 门，只显示前 40 门，输入更具体的关键词</div>';
     }
     if (noF.length) {
-      html += '<details class="entry"><summary>其他匹配课程均无资料（' + noFCnt + ' 门' +
-        (noFCnt > 40 ? '，列前 40' : '') + '）</summary>';
+      html += '<details class="entry"><summary>其他匹配课程均无资料（' + noF.length + ' 门' +
+        (noF.length > 40 ? '，列前 40' : '') + '）</summary>';
       noF.slice(0, 40).forEach(function (r) { html += emptyCard(r.c, tks); });
       if (noF.length > 40) html += '<div class="fmore">只列前 40 门，输入更具体的关键词</div>';
       html += '</details>';
@@ -581,10 +590,11 @@
 
     function render(key) {
       var groups = {}, total = 0;
+      var nk = norm(key);
       c.f.forEach(function (f) {
         if (state.type && f.t !== state.type) return;
-        if (key && (norm(f.n).indexOf(norm(key)) < 0 &&
-                    norm(f.t).indexOf(norm(key)) < 0)) return;
+        if (nk && (norm(f.n).indexOf(nk) < 0 &&
+                   norm(f.t).indexOf(nk) < 0)) return;
         (groups[f.t] = groups[f.t] || []).push(f);
         total++;
       });
@@ -617,8 +627,9 @@
     if (!DATA) return;
     var h = location.hash || "";
     if (h.indexOf("#/c/") === 0) {
-      var p = decodeURIComponent(h.slice(4));
-      var c = DATA.courses.filter(function (x) { return x.p === p; })[0];
+      var p = "";
+      try { p = decodeURIComponent(h.slice(4)); } catch (e) { p = ""; }
+      var c = p ? DATA.courses.filter(function (x) { return x.p === p; })[0] : null;
       if (c) return showCourse(c);
     }
     $("courseview").style.display = "none";
