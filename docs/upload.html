@@ -136,9 +136,20 @@ function preselect(d){
   else if (parts.length >= 5) { col = parts[2]; maj = parts[3]; crs = parts[4]; }
   if (!crs) return;
   const c = $('college'), mj = $('major'), cs = $('course');
+  const panel0 = document.querySelector('.panel');
   c.value = col;
-  c.onchange();
-  if (col !== '__public__') { mj.value = maj; mj.onchange(); }
+  if (c.value !== col) {
+    var warn = document.createElement('div');
+    warn.className = 'presel';
+    warn.textContent = '你点的那门课已经不在库里了（可能改过名），请重新选一次';
+    panel0.insertBefore(warn, panel0.firstChild);
+    return;
+  }
+  if (typeof c.onchange === 'function') c.onchange();
+  if (col !== '__public__' && maj) {
+    mj.value = maj;
+    if (typeof mj.onchange === 'function') mj.onchange();
+  }
   cs.value = crs;
   const ok = c.value === col && cs.value === crs;
   const panel = document.querySelector('.panel');
@@ -304,8 +315,12 @@ $('go').onclick = () => {
     $('go').disabled = false;
     if (xhr.status === 200 && d.ok){
       res.className = 'result ok';
-      res.innerHTML = '已提交，正在归档。' + (d.pr ? '<br>' + d.pr.replace(/(https?:\/\/\S+)/, '<a href="$1" target="_blank">$1</a>') : '') +
-                      (d.skipped_dup ? '<br>（有 ' + d.skipped_dup + ' 个文件和已有文件内容相同，已跳过）' : '');
+      if (!d.pr) {
+        res.innerHTML = '这些文件和库里已有的完全一样，不用再传一次。';
+      } else {
+        res.innerHTML = '已提交，正在归档。<br>' +
+          d.pr.replace(/(https?:\/\/\S+)/, '<a href="$1" target="_blank">$1</a>');
+      }
       picked = []; render(); $('bar').firstElementChild.style.width = '0';
       setTimeout(()=>$('bar').style.display='none', 800);
     } else {
