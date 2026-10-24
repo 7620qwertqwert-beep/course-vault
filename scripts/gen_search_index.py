@@ -26,7 +26,8 @@ def files_of(course_dir):
         for f in sorted(d.iterdir()):
             if not f.is_file() or f.name in SKIP or f.name.startswith("."):
                 continue
-            out.append({"t": t, "n": f.name, "s": f.stat().st_size})
+            st = f.stat()
+            out.append({"t": t, "n": f.name, "s": st.st_size, "u": int(st.st_mtime)})
     return out
 
 
