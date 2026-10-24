@@ -175,13 +175,14 @@ while IFS= read -r file; do
   # 文件名里的类型词必须与所在资料子目录一致，避免“实验报告”放进 作业/。
   # 这里独立于上面的命名规范检查：即使文件名格式有误，只要类型词可识别，
   # 也会指出目录放错（不新增致命退出逻辑）。
-  rest=${base#*-}
+  base_noext=${base%.*}
+  rest=${base_noext#*-}
   type_word=${rest%%-*}
   case "$type_word" in
     期末|期中|试卷|复习|答案) allowed_dirs="试卷 复习资料" ;;
     笔记) allowed_dirs="笔记" ;;
     作业) allowed_dirs="作业" ;;
-    实验报告|实验) allowed_dirs="实验报告" ;;
+    实验报告) allowed_dirs="实验报告" ;;
     课件) allowed_dirs="课件" ;;
     *) allowed_dirs="" ;;
   esac

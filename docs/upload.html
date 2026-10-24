@@ -87,13 +87,13 @@
   <div class="row">
     <label for="title">标题（可选）</label>
     <input type="text" id="title" placeholder="如：第一章绪论 / 期中试卷 / 骨骼标本观察" autocomplete="off">
-    <div class="hint">只写这份资料叫什么；文件会命名为「年份-标题」，例如 2025秋-骨骼标本观察.pdf</div>
+    <div class="hint">只写这份资料叫什么；文件会命名为「年份-标题」，例如 2025秋-骨骼标本观察.pdf；留空则用资料类型名</div>
   </div>
   <div class="row">
-    <label>文件（最多 5 个，单个不超过 50MB）</label>
+    <label>文件（最多 5 个，单个不超过 50MB；zip 不超过 20MB）</label>
     <div class="drop" id="drop">
       点这里选文件，或把文件<b>拖到这里</b><br>
-      <span style="font-size:12px">pdf / doc / ppt / xls / md / txt / jpg / png / zip</span>
+      <span style="font-size:12px">pdf / doc / docx / ppt / pptx / xls / xlsx / md / txt / jpg / jpeg / png / zip</span>
     </div>
     <input type="file" id="file" multiple style="display:none">
     <ul class="files" id="files"></ul>
