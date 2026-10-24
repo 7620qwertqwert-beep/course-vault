@@ -47,6 +47,8 @@
   .chip{display:inline-flex;align-items:center;min-height:44px;padding:0 6px;
       font-size:13.5px;color:var(--muted);cursor:pointer}
   .chip.on{color:var(--pink);font-weight:600}
+  .recentempty{font-size:13px;color:var(--muted);text-align:center;padding:14px 8px}
+  .recentempty a{color:var(--pink)}
   .srchsum{font-size:13px;color:var(--muted);margin:14px 2px 2px}
   .srchsum b{color:var(--ink);font-weight:600}
   .subfs{margin:2px 0 12px 10px;padding:0 14px 0 10px;border-left:2px solid var(--line)}
@@ -81,6 +83,7 @@
       <input id="q" type="search" placeholder="搜课程或资料：解剖 / 骨绘画" autocomplete="off" enterkeyhint="search">
       <button id="go">搜索</button>
     </div>
+    <div id="recent"></div>
     <div id="results"></div>
 
     <div id="browse">
@@ -243,6 +246,7 @@
       $("stats").textContent = (cc.colleges || 0) + " 个学院 · " +
         (cc.courses || 0) + " 门课 · " + (cc.files || 0) + " 份资料";
       fillColleges();
+      renderRecent();
       route();
       // 支持 ?q=关键词 直接落到搜索结果（方便分享/收藏一个搜索）
       var kw = new URLSearchParams(location.search).get("q");
@@ -310,6 +314,38 @@
   function addOpt(sel, text, value) {
     var o = document.createElement("option");
     o.value = value; o.textContent = text; sel.appendChild(o);
+  }
+
+
+  /* ---------- 最近更新（让页面看起来是活的） ---------- */
+  function relTime(ts) {
+    var diff = (Date.now() / 1000) - ts;
+    if (diff < 120) return "刚刚";
+    if (diff < 3600) return Math.round(diff / 60) + " 分钟前";
+    if (diff < 86400) return Math.round(diff / 3600) + " 小时前";
+    return Math.round(diff / 86400) + " 天前";
+  }
+  function renderRecent() {
+    var box = $("recent");
+    if (!box) return;
+    var items = [];
+    DATA.courses.forEach(function (c) {
+      c.f.forEach(function (f) { if (f.u) items.push({ c: c, f: f }); });
+    });
+    if (!items.length) {
+      box.innerHTML = '<div class="recentempty">库里还没有资料，第一份等你来传：' +
+        '<a href="upload.html">去上传</a></div>';
+      return;
+    }
+    items.sort(function (a, b) { return b.f.u - a.f.u; });
+    var html = '<div class="grp">最近更新</div>';
+    items.slice(0, 5).forEach(function (it) {
+      html += '<a class="fitem" href="' + viewUrl(it.c, it.f) + '" target="_blank" rel="noopener">' +
+        '<span class="ft">' + esc(it.f.t) + '</span>' +
+        '<span class="fn">' + esc(it.c.n) + ' · ' + esc(it.f.n) + '</span>' +
+        '<span class="fa">' + relTime(it.f.u) + '</span></a>';
+    });
+    box.innerHTML = html;
   }
 
   /* ---------- 全站搜索（课程 + 资料） ---------- */
@@ -394,12 +430,14 @@
     if (!raw) {
       box.innerHTML = "";
       $("browse").style.display = "";
+      if ($("recent")) $("recent").style.display = "";
       lastKey = "";
       return;
     }
     if (raw === lastKey) return;
     lastKey = raw;
     $("browse").style.display = "none";
+    if ($("recent")) $("recent").style.display = "none";
     var tks = tokens(raw);
     var nk = norm(raw);
     var res = searchAll(tks);
