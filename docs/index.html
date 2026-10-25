@@ -56,6 +56,7 @@
   .fitem .ft{flex:0 0 auto;font-size:11.5px;color:var(--pink);background:var(--pink-soft);border-radius:4px;padding:1px 5px}
   .fitem .fn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .fitem .fa{flex:0 0 auto;color:var(--muted);font-size:12.5px}
+  .fitem .thumb{margin:5px 0}
   .fmore{font-size:12.5px;color:var(--muted);padding:6px 2px;text-decoration:none;display:block}
   .entry{background:#fff;border:1px solid var(--line);border-radius:12px;margin:8px 0;padding:0 13px}
   .entry summary{min-height:44px;display:flex;align-items:center;font-size:13.5px;cursor:pointer;list-style:none}
@@ -130,15 +131,15 @@
   function rawUrl(c, f) { return "/" + encPath(c.p + "/" + f.t + "/" + f.n); }
   // 站内查看页：md/pdf/图片都在页面里直接打开，另有「下载原件」
   function viewUrl(c, f) { return "view.html?p=" + encodeURIComponent(c.p + "/" + f.t + "/" + f.n); }
-  var IMG_RE = /\.(jpe?g|png|webp)$/i;
+  var THUMB_RE = /\.(jpe?g|png|webp|pdf)$/i;
   function thumbUrl(c, f) {
     var rel = (c.p + "/" + f.t + "/" + f.n).replace(/\.[^.]+$/, ".jpg");
     return "/_thumb/" + encPath(rel);
   }
-  // 统一生成一条资料条目：图片带 54px 缩略图（不占多少版面，也不进仓库）
+  // 统一生成一条资料条目：图片/PDF 带 54px 缩略图（不占多少版面，也不进仓库）
   function fileItem(c, f, key, prefix) {
-    var img = IMG_RE.test(f.n)
-      ? '<img class="thumb" loading="lazy" alt="" src="' + thumbUrl(c, f) + '">'
+    var img = THUMB_RE.test(f.n)
+      ? '<img class="thumb" loading="lazy" alt="" onerror="this.style.display=\'none\'" src="' + thumbUrl(c, f) + '">'
       : "";
     var meta = (prefix ? prefix + " › " : "") + f.t + " · " + sizeText(f.s);
     return '<a class="item" href="' + viewUrl(c, f) + '" target="_blank" rel="noopener">' + img +
@@ -380,7 +381,10 @@
       html += '<div class="subfs">';
       var shown = (r.fhits && r.fhits.length ? r.fhits : c.f).slice(0, 3);
       shown.forEach(function (f) {
-        html += '<a class="fitem" href="' + viewUrl(c, f) + '" target="_blank" rel="noopener">' +
+        var th = THUMB_RE.test(f.n)
+          ? '<img class="thumb" loading="lazy" alt="" onerror="this.style.display=\'none\'" src="' + thumbUrl(c, f) + '">'
+          : "";
+        html += '<a class="fitem" href="' + viewUrl(c, f) + '" target="_blank" rel="noopener">' + th +
           '<span class="ft">' + esc(f.t) + '</span>' +
           '<span class="fn">' + mark(f.n, key) + '</span>' +
           '<span class="fa">打开</span></a>';

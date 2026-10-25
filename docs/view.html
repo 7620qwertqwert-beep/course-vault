@@ -18,7 +18,16 @@
   .wrap{max-width:820px;margin:0 auto;padding:14px 14px 40px}
   .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px 16px}
   img.pic{display:block;max-width:100%;height:auto;border-radius:10px;margin:0 auto}
-  iframe.pdf{width:100%;height:78vh;border:1px solid var(--line);border-radius:10px;background:#fff}
+  .pdf-preview{display:block}
+  .pdf-img{display:block;width:100%;height:auto;border:1px solid var(--line);
+           border-radius:10px;background:#fff}
+  .pdf-fb{display:none;border:1px dashed var(--line);border-radius:10px;background:#fafafa;
+          color:var(--muted);font-size:14px;line-height:1.7;text-align:center;padding:22px 12px}
+  .pdf-note{color:var(--muted);font-size:14px;line-height:1.65;margin:12px 2px 0}
+  .pdf-actions{text-align:center;margin-top:14px}
+  .btn{display:inline-block;background:var(--pink);color:#fff;text-decoration:none;
+       padding:11px 28px;border-radius:999px;font-size:16px;font-weight:600}
+  .btn:active{opacity:.85}
   pre{white-space:pre-wrap;word-break:break-word;background:#f7f7f7;padding:12px;border-radius:10px;
       font-size:14px;line-height:1.65;overflow-x:auto}
   h1,h2,h3,h4{line-height:1.4;margin:18px 0 8px}
@@ -136,8 +145,19 @@
   if (["jpg", "jpeg", "png", "webp", "gif", "bmp"].indexOf(ext) >= 0) {
     content.innerHTML = '<img class="pic" alt="" src="' + url + '">';
   } else if (ext === "pdf") {
-    content.innerHTML = '<iframe class="pdf" src="' + url + '"></iframe>' +
-      '<div class="tip">看不到？<a href="' + url + '" download>下载 PDF</a></div>';
+    // 手机浏览器（Chrome/OPPO 等）没有内嵌 PDF 插件，iframe 会整片白屏。
+    // 改为显示服务端渲染的第 1 页预览图，并给出明确的下载入口。
+    var thumb = "/_thumb/" + encPath(p.replace(/\.[^.]+$/, ".jpg"));
+    content.innerHTML =
+      '<a class="pdf-preview" id="pdf-preview" href="' + thumb + '" target="_blank" rel="noopener">' +
+        '<img class="pdf-img" alt="PDF 第一页预览" src="' + thumb + '" ' +
+        'onerror="document.getElementById(\'pdf-preview\').style.display=\'none\';' +
+        'document.getElementById(\'pdf-fb\').style.display=\'block\'">' +
+      '</a>' +
+      '<div class="pdf-fb" id="pdf-fb">预览图暂时不可用（可能还在生成），请直接下载 PDF 查看。</div>' +
+      '<p class="pdf-note">手机浏览器不支持直接显示 PDF，已为你显示第一页（点图片可看大图）；' +
+      '看完整内容请下载，或用其他 App 打开。</p>' +
+      '<div class="pdf-actions"><a class="btn" href="' + url + '" download="' + esc(name) + '">下载 PDF</a></div>';
   } else if (ext === "md" || ext === "txt") {
     var LIMIT = 5 * 1024 * 1024;
     fetch(url).then(function (r) {
