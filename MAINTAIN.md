@@ -84,6 +84,18 @@ PY
 - 现状（已验证）：课程页 `#cq` 输入 `---` 列表为空；全局搜 `python` 时
   `<mark>Ｐｙｔｈｏｎ</mark>`；搜 `解剖` 中文高亮正常；含 `&` 的假课程名实体未被二次转义。
 
+### 5. 预留表在 systemd 下的 setgid 坑（已修，必记）
+
+- `cv_upload.service` 里有 `RestrictSUIDSGID=yes`。在这个限制下，cvuser 任何带 setgid 位的
+  mkdir/chmod 都会 EPERM（`[Errno 1] Operation not permitted`）。
+- 现象：所有上传一律 503「系统繁忙（预留下发超时）」，`/var/log/cv_upload.log` 里是
+  `reserve_unavailable=无法准备预留目录 ...：Operation not permitted`。
+- 根因：`os.mkdir(path, 0o2770)` 与 `os.chmod(path, 0o2770)` 里的 `0o2000`。
+- 修法：预留子目录用 `0o770` 创建；组归属靠父目录 `/srv/cv-inbox/.reserve`
+  （`root:cvuser` + setgid，由 deploy.sh 用 root 创建，root 不受该限制）继承。
+- 这个坑在 /tmp 沙箱里测不出来，只在真实 systemd 单元下暴露。以后改动这块，
+  必须在生产真跑一次上传（看 202 + `/var/log/cv_queue.log` 出现 `job done`）。
+
 ## 回滚
 
 | 改了什么 | 回滚 |
