@@ -157,15 +157,29 @@
   function pathText(c) {
     return c.m ? (c.c + " › " + c.m) : "公共课";
   }
+  // 仅用于算下标的折叠：NFKC + 小写，不删字符、不替换分隔符。
+  // 只有折叠前后长度一致（1:1）时才采用；否则退回原文小写，宁可不高亮也不切错。
+  function markFold(s) {
+    s = String(s == null ? "" : s);
+    var low = s.toLowerCase();
+    if (s.normalize) {
+      var n = s.normalize("NFKC").toLowerCase();
+      if (n.length === s.length) return n;
+    }
+    return low;
+  }
   function mark(text, key) {
     var raw = String(text == null ? "" : text);
     var list = [].concat(key).filter(function (k) { return k; });
     if (!list.length) return esc(raw);
     // 在原文上定位（不能在 esc 之后的串里找，否则 '&amp;' 里的 amp 会被误高亮），
     // 再把三段分别转义，HTML 实体不会被切坏。
-    var low = raw.toLowerCase(), best = -1, bl = 0;
+    // 定位用「长度 1:1」的 NFKC+小写折叠，全角 Ｐｙｔｈｏｎ 也能命中；
+    // 下标仍对应原串，所以切片和分三段 esc 的方式保持不变。
+    var low = markFold(raw), best = -1, bl = 0;
     list.forEach(function (k) {
-      var kk = String(k).toLowerCase();
+      var kk = markFold(k);
+      if (!kk) return;
       var i = low.indexOf(kk);
       if (i >= 0 && (best < 0 || i < best)) { best = i; bl = kk.length; }
     });
@@ -593,6 +607,9 @@
       var nk = norm(key);
       c.f.forEach(function (f) {
         if (state.type && f.t !== state.type) return;
+        // 纯标点（如 ---、《》()）归一后是空串；不拦住的话 indexOf('') === 0
+        // 会让所有资料通过。输入非空但没有有效关键词时，应当零结果。
+        if (key && !nk) return;
         if (nk && (norm(f.n).indexOf(nk) < 0 &&
                    norm(f.t).indexOf(nk) < 0)) return;
         (groups[f.t] = groups[f.t] || []).push(f);
