@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>查看资料 · 信师大南湖课栈</title>
+<title>查看资料 · 南湖课栈</title>
 <link rel="icon" href="data:,">
 <style>
   :root{--pink:#c2466b;--ink:#222;--muted:#7b7b7b;--line:#e6e6e6;--bg:#fafafa}
@@ -137,7 +137,7 @@
   var url = "/" + encPath(p);
   var name = p.split("/").pop();
   document.getElementById("name").textContent = name;
-  document.title = name + " · 信师大南湖课栈";
+  document.title = name + " · 南湖课栈";
   dl.href = url;
   dl.setAttribute("download", name);
   var ext = (name.split(".").pop() || "").toLowerCase();

@@ -328,7 +328,7 @@ def build_index(generated_at):
     )
 
     lines = [
-        "# 信师大南湖课栈 · 课程索引",
+        "# 南湖课栈 · 课程索引",
         "",
         "课程资料库全部课程导航；本文件由 `scripts/build_index.py` 自动生成，请勿手工编辑。",
         "",
