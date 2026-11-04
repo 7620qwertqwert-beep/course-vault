@@ -4,10 +4,16 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>南湖课栈 · 找资料</title>
-<link rel="icon" href="data:,">
+<meta name="description" content="南湖课栈：信阳师范大学课程资料共享库，按学院 / 专业 / 课程查笔记、课件、试卷、作业、实验报告与复习资料。">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="南湖课栈">
+<meta property="og:title" content="南湖课栈 · 找资料">
+<meta property="og:description" content="按学院 / 专业 / 课程查找笔记、课件、试卷、作业与复习资料。">
+<meta property="og:url" content="http://82.156.233.65:8080/docs/">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23c2466b'/%3E%3Ctext x='16' y='23' font-size='19' text-anchor='middle' fill='%23fff' font-family='sans-serif'%3E%E8%AF%BE%3C/text%3E%3C/svg%3E">
 
 <style>
-  :root{--pink:#c2466b;--ink:#222;--muted:#7b7b7b;--line:#e6e6e6;--bg:#fafafa}
+  :root{--pink:#c2466b;--pink-soft:#fde8ef;--ink:#222;--muted:#7b7b7b;--line:#e6e6e6;--bg:#fafafa}
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);
        font:16px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
@@ -18,7 +24,7 @@
   .searchbar{display:flex;gap:8px;margin:14px 0 6px}
   .searchbar input{flex:1;min-width:0;padding:13px 14px;font-size:16px;color:var(--ink);
       border:1px solid var(--line);border-radius:12px;background:#fff;-webkit-appearance:none}
-  .searchbar input:focus{outline:none;border-color:var(--pink)}
+  .searchbar input:focus{outline:none;border-color:var(--pink);box-shadow:0 0 0 3px rgba(194,70,107,.15)}
   .searchbar button{flex:0 0 auto;padding:0 18px;font-size:16px;border:none;border-radius:12px;
       background:var(--pink);color:#fff}
   .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin:12px 0}
@@ -81,7 +87,7 @@
   <!-- 首页 -->
   <div id="home">
     <div class="searchbar">
-      <input id="q" type="search" placeholder="搜课程或资料：解剖 / 骨绘画" autocomplete="off" enterkeyhint="search">
+      <input id="q" type="search" aria-label="搜索课程或资料" placeholder="搜课程或资料：解剖 / 骨绘画" autocomplete="off" enterkeyhint="search">
       <button id="go">搜索</button>
     </div>
     <div id="recent"></div>
@@ -89,11 +95,11 @@
 
     <div id="browse">
       <div class="card">
-        <div class="row"><label>学院</label>
+        <div class="row"><label for="college">学院</label>
           <select id="college"><option value="">请选择学院</option></select></div>
-        <div class="row"><label>专业</label>
+        <div class="row"><label for="major">专业</label>
           <select id="major" disabled><option value="">先选学院</option></select></div>
-        <div class="row"><label>课程</label>
+        <div class="row"><label for="course">课程</label>
           <select id="course" disabled><option value="">先选专业</option></select></div>
       </div>
     </div>
@@ -256,7 +262,7 @@
   }
 
   /* ---------- 数据加载 ---------- */
-  fetch("data/search.json", { cache: "no-store" })
+  fetch("data/search.json", { cache: "no-cache" })
     .then(function (r) { return r.json(); })
     .then(function (d) {
       DATA = d;
