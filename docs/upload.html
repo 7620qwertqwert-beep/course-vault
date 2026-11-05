@@ -24,14 +24,17 @@
   .drop.on{border-color:var(--pink);background:var(--pink-soft);color:var(--pink)}
   .drop b{color:var(--pink)}
   .files{margin:10px 0 0;padding:0;list-style:none;font-size:13px}
-  .files li{padding:6px 2px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:8px}
+  .files li{padding:6px 2px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:8px}
   .files li:last-child{border-bottom:none}
   .files .sz{color:var(--muted);white-space:nowrap}
+  .files .remove{padding:6px 8px;border:0;background:none;color:var(--bad);font:inherit;cursor:pointer}
+  .files .remove:focus-visible,.drop:focus-visible{outline:2px solid var(--pink);outline-offset:2px}
+  .file-summary{min-height:1.5em}
   button.submit{width:100%;padding:14px;font-size:16px;font-weight:600;color:#fff;background:var(--pink);border:none;border-radius:12px;margin-top:4px}
   button.submit:disabled{background:#e8c9d6}
   .bar{height:6px;border-radius:4px;background:var(--line);margin-top:12px;overflow:hidden;display:none}
   .bar i{display:block;height:100%;width:0;background:var(--pink);transition:width .2s}
-  .result{margin-top:12px;font-size:14px;display:none;border-radius:12px;padding:12px;word-break:break-all}
+  .result{margin-top:12px;font-size:14px;display:none;border-radius:12px;padding:12px;word-break:break-word;white-space:pre-line}
   .result.ok{display:block;background:#eefaf3;color:var(--ok);border:1px solid #cdeedc}
   .result.bad{display:block;background:#fdeef1;color:var(--bad);border:1px solid #f6cdd7}
   .result a{color:inherit;font-weight:600}
@@ -90,17 +93,18 @@
     <div class="hint">只写这份资料叫什么；文件会命名为「年份-标题」，例如 2025秋-骨骼标本观察.pdf；留空则用资料类型名</div>
   </div>
   <div class="row">
-    <label>文件（最多 5 个，单个不超过 50MB；zip 不超过 20MB）</label>
-    <div class="drop" id="drop">
+    <label for="file">文件（最多 5 个；单个 ≤50MB、zip ≤20MB、合计 ≤100MB）</label>
+    <div class="drop" id="drop" role="button" tabindex="0" aria-label="选择文件，或拖放文件到这里" aria-describedby="file-types">
       点这里选文件，或把文件<b>拖到这里</b><br>
-      <span style="font-size:12px">pdf / doc / docx / ppt / pptx / xls / xlsx / md / txt / jpg / jpeg / png / zip</span>
+      <span id="file-types" style="font-size:12px">pdf / doc / docx / ppt / pptx / xls / xlsx / md / txt / jpg / jpeg / png / zip</span>
     </div>
-    <input type="file" id="file" multiple style="display:none">
+    <input type="file" id="file" multiple accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.md,.txt,.jpg,.jpeg,.png,.zip" aria-label="选择要上传的资料" style="display:none">
     <ul class="files" id="files"></ul>
+    <div class="hint file-summary" id="file-summary" aria-live="polite"></div>
   </div>
   <button class="submit" id="go">提交</button>
-  <div class="bar" id="bar"><i></i></div>
-  <div class="result" id="result"></div>
+  <div class="bar" id="bar" role="progressbar" aria-label="上传进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></div>
+  <div class="result" id="result" role="status" aria-live="polite" aria-atomic="true"></div>
 </div>
 
 <div class="fb" id="fb" data-expires="2026-10-31T23:59:59+08:00">
@@ -119,6 +123,11 @@
 const $ = id => document.getElementById(id);
 const API = location.pathname.includes('/docs/') ? '../api' : '/api';
 let picked = [];
+const MAX_FILES = 5;
+const MAX_FILE_SIZE = 50 * 1024 * 1024;
+const MAX_ZIP_SIZE = 20 * 1024 * 1024;
+const MAX_TOTAL_SIZE = 100 * 1024 * 1024;
+const ALLOWED_EXTENSIONS = new Set(['pdf', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'md', 'txt', 'jpg', 'jpeg', 'png', 'zip']);
 
 function opt(sel, text, value){
   const o = document.createElement('option');
@@ -197,34 +206,67 @@ fetch(API + '/tree').then(r => r.json()).then(d => {
 
 const drop = $('drop'), fileInput = $('file');
 drop.onclick = () => fileInput.click();
+drop.onkeydown = ev => {
+  if (ev.key === 'Enter' || ev.key === ' ') {
+    ev.preventDefault();
+    fileInput.click();
+  }
+};
 ['dragenter','dragover'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.add('on'); }));
 ['dragleave','drop'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.remove('on'); }));
 drop.addEventListener('drop', ev => { addFiles(ev.dataTransfer.files); });
-fileInput.onchange = () => addFiles(fileInput.files);
+fileInput.onchange = () => { addFiles(fileInput.files); fileInput.value = ''; };
 
 function addFiles(list){
+  const errors = [];
   for (const f of list){
-    if (picked.length >= 5){ alert('最多 5 个文件'); break; }
-    if (f.size > 50 * 1024 * 1024){ alert(f.name + ' 超过 50MB'); continue; }
+    if (picked.length >= MAX_FILES){ errors.push('最多只能上传 5 个文件。'); break; }
+    const ext = f.name.split('.').pop().toLowerCase();
+    if (!ALLOWED_EXTENSIONS.has(ext)){ errors.push(f.name + '：不支持此文件类型。'); continue; }
+    if (f.size === 0){ errors.push(f.name + '：不能上传空文件。'); continue; }
+    if (f.size > MAX_FILE_SIZE){ errors.push(f.name + '：超过 50MB。'); continue; }
+    if (ext === 'zip' && f.size > MAX_ZIP_SIZE){ errors.push(f.name + '：ZIP 文件不能超过 20MB。'); continue; }
+    const total = picked.reduce((sum, item) => sum + item.size, 0);
+    if (total + f.size > MAX_TOTAL_SIZE){ errors.push(f.name + '：加入后总大小会超过 100MB。'); continue; }
     picked.push(f);
   }
   render();
+  if (errors.length) {
+    const res = $('result');
+    res.className = 'result bad';
+    res.textContent = errors.join('\n');
+  } else {
+    const res = $('result');
+    res.className = 'result';
+    res.textContent = '';
+  }
 }
 function render(){
   const ul = $('files');
   ul.innerHTML = '';
+  const total = picked.reduce((sum, file) => sum + file.size, 0);
+  $('file-summary').textContent = picked.length
+    ? picked.length + '/5 个文件 · 合计 ' + (total/1048576).toFixed(1) + '/100 MB'
+    : '';
   picked.forEach((f, i) => {
     const li = document.createElement('li');
     const name = document.createElement('span'); name.textContent = f.name;
     const right = document.createElement('span'); right.className = 'sz';
-    right.textContent = (f.size/1048576).toFixed(1) + ' MB';
-    right.onclick = () => { picked.splice(i,1); render(); };
-    right.style.cursor = 'pointer';
+    right.textContent = (f.size/1048576).toFixed(1) + ' MB ';
+    const remove = document.createElement('button');
+    remove.type = 'button'; remove.className = 'remove'; remove.textContent = '移除';
+    remove.setAttribute('aria-label', '移除文件 ' + f.name);
+    remove.onclick = () => {
+      picked.splice(i,1);
+      render();
+      const res = $('result');
+      res.className = 'result';
+      res.textContent = '';
+    };
+    right.appendChild(remove);
     li.appendChild(name); li.appendChild(right);
     ul.appendChild(li);
   });
-  if (picked.length) ul.appendChild(Object.assign(document.createElement('li'),
-    {textContent:'（点右侧大小可移除）', style:'color:#a8a3b3;font-size:12px;justify-content:flex-end'}));
 }
 
 /* ---------- 任务号持久化 + 结果轮询（顶层：页面加载即生效） ---------- */
@@ -235,8 +277,14 @@ function resetJobUI() {
   const bar = $('bar');
   if (bar) {
     bar.style.display = 'none';
+    bar.setAttribute('aria-valuenow', '0');
     if (bar.firstElementChild) bar.firstElementChild.style.width = '0';
   }
+}
+function setUploadProgress(value) {
+  const progress = Math.max(0, Math.min(100, Math.round(value)));
+  $('bar').setAttribute('aria-valuenow', String(progress));
+  $('bar').firstElementChild.style.width = progress + '%';
 }
 function remember(job) {
   try { localStorage.setItem(JOB_KEY, job); } catch (e) {}
@@ -336,6 +384,17 @@ $('go').onclick = () => {
   if (!college || !course || !year || !type || !picked.length){
     res.className = 'result bad'; res.textContent = '还有没填的：学院 / 课程 / 年份学期 / 类型 / 文件都要有'; return;
   }
+  const invalidFiles = picked.filter(f => {
+    const ext = f.name.split('.').pop().toLowerCase();
+    return !ALLOWED_EXTENSIONS.has(ext) || f.size === 0 || f.size > MAX_FILE_SIZE ||
+      (ext === 'zip' && f.size > MAX_ZIP_SIZE);
+  });
+  const totalSize = picked.reduce((sum, file) => sum + file.size, 0);
+  if (invalidFiles.length || totalSize > MAX_TOTAL_SIZE || picked.length > MAX_FILES) {
+    res.className = 'result bad';
+    res.textContent = '文件数量、类型或大小不符合限制，请检查文件列表后重试。';
+    return;
+  }
   const fd = new FormData();
   fd.append('college', college === '__public__' ? '' : college);
   fd.append('major', major === '__public__' ? '' : major);
@@ -347,13 +406,14 @@ $('go').onclick = () => {
 
   const xhr = new XMLHttpRequest();
   xhr.open('POST', API + '/upload');
-  $('go').disabled = true; $('bar').style.display = 'block';
+  $('go').disabled = true; $('bar').style.display = 'block'; setUploadProgress(0);
   xhr.upload.onprogress = e => {
-    if (e.lengthComputable) $('bar').firstElementChild.style.width = (e.loaded/e.total*100).toFixed(0) + '%';
+    if (e.lengthComputable) setUploadProgress(e.loaded/e.total*100);
   };
   const finishJob = () => {
     $('go').disabled = false;
     $('bar').style.display = 'none';
+    $('bar').setAttribute('aria-valuenow', '0');
     $('bar').firstElementChild.style.width = '0';
   };
 
@@ -363,7 +423,7 @@ $('go').onclick = () => {
     if (xhr.status === 202 && d.ok && d.job){
       res.className = 'result ok';
       res.textContent = '已接收，正在归档…';
-      $('bar').firstElementChild.style.width = '100%';
+      setUploadProgress(100);
       picked = []; render();
       $('go').disabled = true;
       pollJob(d.job);
@@ -378,15 +438,15 @@ $('go').onclick = () => {
         res.innerHTML = '已提交，正在归档。<br>' +
           d.pr.replace(/(https?:\/\/\S+)/, '<a href="$1" target="_blank">$1</a>');
       }
-      picked = []; render(); $('bar').firstElementChild.style.width = '0';
-      setTimeout(()=>$('bar').style.display='none', 800);
+      picked = []; render();
+      setTimeout(finishJob, 800);
     } else {
+      finishJob();
       res.className = 'result bad';
       res.textContent = d.error || ('提交失败（HTTP ' + xhr.status + '）');
-      $('bar').style.display = 'none';
     }
   };
-  xhr.onerror = () => { $('go').disabled = false; $('bar').style.display='none';
+  xhr.onerror = () => { finishJob();
     res.className='result bad'; res.textContent='网络中断了，换个网络或稍后再试'; };
   xhr.send(fd);
 };
