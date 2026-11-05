@@ -155,6 +155,55 @@ public_count=$(wc -l < "$tmpdir/public" | tr -d ' ')
 professional_count=$(wc -l < "$tmpdir/professional" | tr -d ' ')
 echo "  课程数：公共课 ${public_count} 门，专业课 ${professional_count} 门。"
 
+echo "== 1.5 检查他校参考结构（学校/类别/资料；只作对照，不进索引） =="
+ref_root=courses/他校参考
+if [ -d "$ref_root" ]; then
+  # 根目录只允许 README.md 和学校目录
+  find "$ref_root" -mindepth 1 -maxdepth 1 -type f ! -name 'README.md' ! -path '*/.*' 2>/dev/null | sort > "$tmpdir/ref_stray"
+  while IFS= read -r stray; do
+    [ -n "$stray" ] || continue
+    echo "  ⚠ 他校参考下不该直接放资料: $stray（应放 学校/类别/）"
+    bad=$((bad + 1))
+  done < "$tmpdir/ref_stray"
+
+  ref_schools=0
+  ref_files=0
+  find "$ref_root" -mindepth 1 -maxdepth 1 -type d ! -path '*/.*' 2>/dev/null | sort > "$tmpdir/ref_school_dirs"
+  while IFS= read -r school; do
+    [ -n "$school" ] || continue
+    ref_schools=$((ref_schools + 1))
+
+    # 学校目录只允许 README.md 和类别目录
+    find "$school" -mindepth 1 -maxdepth 1 -type f ! -name 'README.md' ! -path '*/.*' 2>/dev/null | sort > "$tmpdir/ref_stray_school"
+    while IFS= read -r stray; do
+      [ -n "$stray" ] || continue
+      echo "  ⚠ 他校参考资料缺类别目录: $stray（应放 学校/类别/）"
+      bad=$((bad + 1))
+    done < "$tmpdir/ref_stray_school"
+
+    # 类别目录下不允许再嵌套目录
+    find "$school" -mindepth 1 -maxdepth 1 -type d ! -path '*/.*' 2>/dev/null | sort > "$tmpdir/ref_cats"
+    while IFS= read -r cat; do
+      [ -n "$cat" ] || continue
+      nested=$(find "$cat" -mindepth 1 -type d ! -path '*/.*' 2>/dev/null | head -n 1)
+      if [ -n "$nested" ]; then
+        echo "  ⚠ 他校参考层级过深: $nested（最多 学校/类别/资料）"
+        bad=$((bad + 1))
+      fi
+      n=$(find "$cat" -mindepth 1 -maxdepth 1 -type f ! -name '.gitkeep' ! -path '*/.*' 2>/dev/null | wc -l | tr -d ' ')
+      ref_files=$((ref_files + n))
+      if [ "$n" -eq 0 ]; then
+        echo "  ⚠ 他校参考类别目录为空: $cat"
+        bad=$((bad + 1))
+      fi
+    done < "$tmpdir/ref_cats"
+  done < "$tmpdir/ref_school_dirs"
+
+  echo "  他校参考：${ref_schools} 所学校，${ref_files} 份资料。"
+else
+  echo "  [OK] 无 courses/他校参考/（可选目录）"
+fi
+
 echo "== 2. 检查文件名规范（应为 YYYY春/秋-描述） =="
 find courses -type f 2>/dev/null | sort > "$tmpdir/files"
 while IFS= read -r file; do
@@ -184,6 +233,7 @@ while IFS= read -r file; do
     作业) allowed_dirs="作业" ;;
     实验报告) allowed_dirs="实验报告" ;;
     课件) allowed_dirs="课件" ;;
+    培养方案) allowed_dirs="培养方案" ;;
     *) allowed_dirs="" ;;
   esac
   if [ -n "$allowed_dirs" ]; then
@@ -226,7 +276,7 @@ else
 fi
 
 echo
-echo "扫描范围：仅覆盖课程目录结构、文件名以及 .md/.txt 文本内容；"
+echo "扫描范围：仅覆盖课程目录与他校参考结构、文件名以及 .md/.txt 文本内容；"
 echo "PDF/DOCX/PPTX 等二进制资料的内容需人工复核，本脚本不对其作结论。"
 if [ "$bad" -eq 0 ]; then
   echo "[OK] 共 0 处问题（文本文件与目录结构范围内）。"

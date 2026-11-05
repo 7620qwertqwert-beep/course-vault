@@ -96,6 +96,13 @@ PY
 - 这个坑在 /tmp 沙箱里测不出来，只在真实 systemd 单元下暴露。以后改动这块，
   必须在生产真跑一次上传（看 202 + `/var/log/cv_queue.log` 出现 `job done`）。
 
+## 静态站点与 nginx（2026-11-05 调整）
+
+- **gzip 只对 html 生效**：`nginx.conf` 里 `gzip on;` 开着，但 `gzip_types` 一直是注释状态，默认只压 `text/html`。补上 `application/json` 等后，`/docs/data/search.json` 从 138 KB 降到约 12.7 KB。
+- **搜索数据缓存**：原来前端 `fetch(..., {cache:"no-store"})` 让 ETag 失效，每次打开首页全量重下；现在前端用 `no-cache`（协商），nginx 给 `/docs/data/` 加 `Cache-Control: public, max-age=60, must-revalidate`。复验实测：带 `If-None-Match` 返回 `304 0`。
+- **站点响应头**：`X-Content-Type-Options: nosniff`、`Referrer-Policy: strict-origin-when-cross-origin`、`X-Frame-Options: SAMEORIGIN`。注意 `add_header` 在 location 内会覆盖 server 级配置，`/docs/data/` 里因此重复写了一组，改动时别删。
+- **静态页发布**：改 `docs/*.html` 后先传到 `/root/course-vault/docs/`，再同步到 `/var/www/course-vault/docs/`。两份 md5 必须一致，否则线上还是旧的（这次就是两份都传了）。
+
 ## 回滚
 
 | 改了什么 | 回滚 |
@@ -105,6 +112,8 @@ PY
 | `MAINTAIN.md` | `cp -a /root/fix3_backups_1792892177/MAINTAIN.md.bak.1792892177 /root/course-vault/MAINTAIN.md` |
 | `cv_upload_server.py` | 恢复备份 + `systemctl restart cv_upload`（约 30 秒） |
 | nginx 配置 | `cp -a /etc/nginx/sites-available/course-vault.bak.<ts> ...` + `nginx -t && systemctl reload nginx` |
+| nginx 配置 / gzip（2026-11-05） | 备份在 `/root/backups/nginx-course-vault.<ts>.bak`、`/root/backups/nginx.conf.<ts>.bak`；`cp -a` 回去后 `nginx -t && systemctl reload nginx` |
+| `docs/index.html`（2026-11-05） | 备份在 `/root/backups/index.html.<ts>.bak` 与 `/root/backups/varwww-index.html.<ts>.bak`，分别对应仓库副本和线上副本 |
 
 ## 部署注意
 
